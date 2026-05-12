@@ -1,0 +1,24 @@
+{
+  "name": "md-to-wechat",
+  "version": "1.0.0",
+  "description": "Markdown 公众号排版编辑器",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "generate": "node generate-app.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "terser": "^5.47.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
