@@ -179,7 +179,20 @@ function simpleMarkdownToHtml(md: string): string {
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-  html = html.replace(/^> (.*$)/gim, '<blockquote class="nice-quote"><p>$1</p></blockquote>');
+  // 处理引用块：支持多行连续引用，包括空引用行
+  // 匹配连续的 > 行（包括只有 > 的空引用行）
+  html = html.replace(/((?:^>\s*.+\n?)+)/gm, (match) => {
+    const lines = match.trim().split('\n').map(line => {
+      // 移除行首的 > 和可能的空格
+      return line.replace(/^>\s*/, '');
+    }).filter(line => line.trim()); // 过滤掉空行
+    if (lines.length === 0) return ''; // 如果全是空引用行，返回空
+    // 将多行内容合并为段落
+    const content = lines.join('<br/>');
+    return `<blockquote class="nice-quote"><p>${content}</p></blockquote>`;
+  });
+  // 清理残留的空引用行（只有 > 没有内容的行）
+  html = html.replace(/^>\s*$/gm, '');
   html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<em><strong>$1</strong></em>');
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
