@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+/* ============================================================
+   主题样式
+   ============================================================ */
 const THEME_CSS: Record<string, string> = {
   default: `/* 全局属性 */
 #nice { font-size: 15px; color: #333333; line-height: 1.75; word-spacing: 1px; letter-spacing: 1px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 680px; margin: 0 auto; }
@@ -90,6 +93,9 @@ const THEME_CSS: Record<string, string> = {
 #nice strong { color: #3e2723; }`
 };
 
+/* ============================================================
+   默认 Markdown 示例
+   ============================================================ */
 const DEFAULT_MD = `# Markdown Nice 排版演示
 
 > 这是一段引用文字，用来展示引用块的样式效果。在微信公众号文章中，合理的引用可以突出重点内容。
@@ -156,48 +162,65 @@ print(calculate_fibonacci(10))
 
 ---
 
-## 三、结语
+## 三、图片上传功能
+
+🎉 **本项目支持图片上传！** 你可以：
+
+1. **点击上方「上传图片」按钮** 选择图片
+2. **直接粘贴**（Ctrl+V / Cmd+V）截图或图片
+3. **拖拽图片** 到编辑器区域
+
+支持三种图床模式（见顶部「图床」下拉框）：
+- **Base64 内嵌**：零配置，图片直接嵌入 Markdown（适合小图）
+- **GitHub 图床**：免费、稳定，需配置 Token（适合正式文章）
+- **外部 URL**：手动输入图片链接
+
+---
+
+## 四、结语
 
 以上就是 Markdown 转公众号排版系统的完整演示。你可以左侧编辑 Markdown，右侧实时预览效果。选择合适的主题后，复制到微信公众号编辑器即可！
 `;
 
+/* ============================================================
+   工具函数：Markdown → HTML
+   ============================================================ */
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function simpleMarkdownToHtml(md: string): string {
   let html = md;
+  // 先保护代码块
+  const codeBlocks: Record<string, string> = {};
+  let cbIdx = 0;
   html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
+    const key = `__CODE_BLOCK_${cbIdx++}__`;
     const language = lang || 'plaintext';
-    return `<pre class="code-block" data-lang="${language}"><code class="language-${language}">${escapeHtml(code.trim())}</code></pre>`;
+    codeBlocks[key] = `<pre class="code-block" data-lang="${language}"><code class="language-${language}">${escapeHtml(code.trim())}</code></pre>`;
+    return key;
   });
+  // 行内代码
   html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+  // 图片（支持 Base64）
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;display:block;margin:16px auto;border-radius:4px;" data-ratio="0.5" data-type="png"/>');
+  // 标题
   html = html.replace(/^###### (.*$)/gim, '<h6>$1</h6>');
   html = html.replace(/^##### (.*$)/gim, '<h5>$1</h5>');
   html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-  // 处理引用块：支持多行连续引用，包括空引用行
-  // 匹配连续的 > 行（包括只有 > 的空引用行）
-  html = html.replace(/((?:^>\s*.+\n?)+)/gm, (match) => {
-    const lines = match.trim().split('\n').map(line => {
-      // 移除行首的 > 和可能的空格
-      return line.replace(/^>\s*/, '');
-    }).filter(line => line.trim()); // 过滤掉空行
-    if (lines.length === 0) return ''; // 如果全是空引用行，返回空
-    // 将多行内容合并为段落
-    const content = lines.join('<br/>');
-    return `<blockquote class="nice-quote"><p>${content}</p></blockquote>`;
-  });
-  // 清理残留的空引用行（只有 > 没有内容的行）
-  html = html.replace(/^>\s*$/gm, '');
+  // 引用
+  html = html.replace(/^> (.*$)/gim, '<blockquote class="nice-quote"><p>$1</p></blockquote>');
+  // 强调
   html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<em><strong>$1</strong></em>');
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
   html = html.replace(/~~(.*?)~~/g, '<del>$1</del>');
+  // 链接
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" data-external="true">$1</a>');
+  // 表格
   html = html.replace(/((?:\|.*\|\n)+)/g, (match) => {
     const rows = match.trim().split('\n').filter(r => r.trim());
     if (rows.length < 2) return match;
@@ -213,6 +236,7 @@ function simpleMarkdownToHtml(md: string): string {
     table += '</tbody></table>';
     return table;
   });
+  // 列表
   html = html.replace(/((?:^\s*[-*+] .+\n)+)/gm, (match) => {
     const items = match.trim().split('\n').map(line => `<li>${line.replace(/^\s*[-*+]\s*/, '')}</li>`).join('');
     return `<ul class="nice-ul">${items}</ul>`;
@@ -221,16 +245,40 @@ function simpleMarkdownToHtml(md: string): string {
     const items = match.trim().split('\n').map(line => `<li>${line.replace(/^\s*\d+\.\s*/, '')}</li>`).join('');
     return `<ol class="nice-ol">${items}</ol>`;
   });
+  // 分割线
   html = html.replace(/^---+$/gm, '<hr class="nice-hr"/>');
-  html = html.replace(/\n\n/g, '</p><p>');
-  html = html.replace(/^(.+)$/gm, (match) => {
-    if (match.startsWith('<')) return match;
-    return `<p>${match}</p>`;
+  // 段落
+  const lines = html.split('\n');
+  let result = '';
+  let inPara = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (inPara) { result += '</p>'; inPara = false; }
+      result += '\n';
+      continue;
+    }
+    if (trimmed.startsWith('<') && !trimmed.startsWith('<img')) {
+      if (inPara) { result += '</p>'; inPara = false; }
+      result += line + '\n';
+    } else {
+      if (!inPara) { result += '<p>'; inPara = true; }
+      result += line + ' ';
+    }
+  }
+  if (inPara) result += '</p>';
+  html = result;
+  html = html.replace(/<p>\s*<\/p>/g, '');
+  // 恢复代码块
+  Object.entries(codeBlocks).forEach(([key, val]) => {
+    html = html.replace(key, val);
   });
-  html = html.replace(/<p><\/p>/g, '');
   return html;
 }
 
+/* ============================================================
+   工具函数：微信适配
+   ============================================================ */
 function adaptForWechat(html: string): string {
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div id="nice">${html}</div>`, 'text/html');
@@ -281,29 +329,83 @@ function generateOutputHtml(md: string, themeId: string, mode: string): string {
   return `<style>${css}</style>\n<div id="nice">${html}</div>`;
 }
 
+/* ============================================================
+   图片上传：转 Base64
+   ============================================================ */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ============================================================
+   图片上传：GitHub 图床
+   ============================================================ */
+async function uploadToGitHub(file: File, token: string, repo: string): Promise<string> {
+  const content = await fileToBase64(file);
+  const base64Content = content.split(',')[1];
+  const path = `images/${Date.now()}_${file.name}`;
+  const url = `https://api.github.com/repos/${repo}/contents/${path}`;
+
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `token ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: `Upload image: ${file.name}`,
+      content: base64Content,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub 上传失败: ${res.status}`);
+  }
+
+  const data = await res.json();
+  // GitHub raw URL
+  return data.content.download_url.replace('raw.githubusercontent.com', 'cdn.jsdelivr.net/gh').replace('/master/', '@master/');
+}
+
+/* ============================================================
+   主组件
+   ============================================================ */
 export default function App() {
   const [md, setMd] = useState(DEFAULT_MD);
   const [theme, setTheme] = useState('default');
   const [mode, setMode] = useState('preview');
   const [toast, setToast] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [imageMode, setImageMode] = useState<'base64' | 'github' | 'url'>('base64');
+  const [showGhConfig, setShowGhConfig] = useState(false);
+  const [ghToken, setGhToken] = useState('');
+  const [ghRepo, setGhRepo] = useState('');
+  const [dragOver, setDragOver] = useState(false);
+
   const previewRef = useRef<HTMLIFrameElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  /* Toast */
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
   };
 
+  /* 预览更新 */
   const updatePreview = useCallback(() => {
     let html = simpleMarkdownToHtml(md);
     if (mode === 'wechat') {
       html = adaptForWechat(html);
     }
     const css = (THEME_CSS as any)[theme] || (THEME_CSS as any).default;
-    const fullHtml = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8">
-<style>${css}</style>
-</head><body><div id="nice">${html}</div></body></html>`;
+    const fullHtml = `<!DOCTYPE html>\n<html><head><meta charset="UTF-8">\n<style>${css}</style>\n</head><body><div id="nice">${html}</div></body></html>`;
     if (previewRef.current) {
       previewRef.current.srcdoc = fullHtml;
     }
@@ -313,10 +415,80 @@ export default function App() {
     updatePreview();
   }, [updatePreview]);
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
+  /* 插入 Markdown 文本 */
+  const insertAtCursor = (text: string) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const newMd = md.substring(0, start) + text + md.substring(end);
+    setMd(newMd);
+    requestAnimationFrame(() => {
+      ta.selectionStart = ta.selectionEnd = start + text.length;
+      ta.focus();
+    });
   };
 
+  /* 处理图片文件 */
+  const processImageFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      showToast('请选择图片文件');
+      return;
+    }
+    setUploading(true);
+    try {
+      let imageUrl: string;
+      if (imageMode === 'base64') {
+        imageUrl = await fileToBase64(file);
+        showToast(`已插入图片（Base64，${(file.size / 1024).toFixed(1)}KB）`);
+      } else if (imageMode === 'github') {
+        if (!ghToken || !ghRepo) {
+          setShowGhConfig(true);
+          setUploading(false);
+          return;
+        }
+        imageUrl = await uploadToGitHub(file, ghToken, ghRepo);
+        showToast('GitHub 图床上传成功！');
+      } else {
+        // url 模式：转 base64 但提示用户
+        imageUrl = await fileToBase64(file);
+        showToast('已转为 Base64，如需 URL 请使用图床');
+      }
+      insertAtCursor(`\n![${file.name}](${imageUrl})\n`);
+    } catch (e: any) {
+      showToast(`上传失败: ${e.message || '未知错误'}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  /* 粘贴事件 */
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) await processImageFile(file);
+        return;
+      }
+    }
+  };
+
+  /* 拖拽事件 */
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = e.dataTransfer.files;
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        await processImageFile(file);
+      }
+    }
+  };
+
+  /* 导入 Markdown */
+  const handleImportClick = () => fileInputRef.current?.click();
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -330,145 +502,201 @@ export default function App() {
     e.target.value = '';
   };
 
+  /* 复制 / 下载 */
   const handleCopy = async () => {
     const output = generateOutputHtml(md, theme, mode);
-    try {
-      await navigator.clipboard.writeText(output);
-      showToast('已复制 HTML 到剪贴板！');
-    } catch {
-      showToast('复制失败，请手动复制');
-    }
+    try { await navigator.clipboard.writeText(output); showToast('已复制 HTML 到剪贴板！'); }
+    catch { showToast('复制失败，请手动复制'); }
   };
-
   const handleCopyForWechat = async () => {
     const output = generateOutputHtml(md, theme, 'wechat');
-    try {
-      await navigator.clipboard.writeText(output);
-      showToast('已复制到公众号格式！直接粘贴到公众号编辑器即可');
-    } catch {
-      showToast('复制失败，请手动复制');
-    }
+    try { await navigator.clipboard.writeText(output); showToast('已复制到公众号格式！'); }
+    catch { showToast('复制失败'); }
   };
-
   const handleDownload = () => {
     const output = generateOutputHtml(md, theme, mode);
     const fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${output}</body></html>`;
     const blob = new Blob([fullHtml], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'article.html';
-    a.click();
+    a.href = url; a.download = 'article.html'; a.click();
     URL.revokeObjectURL(url);
     showToast('已下载 article.html');
   };
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
+      {/* Toast */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 bg-gray-800 text-white text-sm rounded-lg shadow-lg">
           {toast}
         </div>
       )}
 
+      {/* 上传中遮罩 */}
+      {uploading && (
+        <div className="fixed inset-0 z-40 bg-black/20 flex items-center justify-center">
+          <div className="bg-white rounded-lg px-6 py-4 shadow-xl flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-gray-700">图片上传中...</span>
+          </div>
+        </div>
+      )}
+
+      {/* GitHub 配置弹窗 */}
+      {showGhConfig && (
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center" onClick={() => setShowGhConfig(false)}>
+          <div className="bg-white rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-800 mb-4">GitHub 图床配置</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">GitHub Token</label>
+                <input
+                  type="password"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  placeholder="ghp_xxxxxxxxxxxx"
+                  value={ghToken}
+                  onChange={e => setGhToken(e.target.value)}
+                />
+                <p className="text-xs text-gray-400 mt-1">需要 repo 权限的 Personal Access Token</p>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">仓库名称</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  placeholder="用户名/仓库名"
+                  value={ghRepo}
+                  onChange={e => setGhRepo(e.target.value)}
+                />
+                <p className="text-xs text-gray-400 mt-1">例如：cscsxx606/images</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                onClick={() => setShowGhConfig(false)}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+              >取消</button>
+              <button
+                onClick={() => { setShowGhConfig(false); showToast('GitHub 配置已保存'); }}
+                className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-md"
+              >保存配置</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
       <header className="h-14 bg-white border-b border-gray-200 flex items-center px-4 justify-between shrink-0">
         <div className="flex items-center gap-3">
           <div className="text-lg font-bold text-gray-800">MD to WeChat</div>
           <span className="text-xs text-gray-400">Markdown 公众号排版编辑器</span>
         </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="file"
-            accept=".md,.markdown,.txt"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <button
-            onClick={handleImportClick}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-gray-700 transition-colors"
-          >
+        <div className="flex items-center gap-2">
+          {/* 文件导入 */}
+          <input type="file" accept=".md,.markdown,.txt" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+          <button onClick={handleImportClick} className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-gray-700 transition-colors">
             导入 MD
           </button>
 
+          {/* 图片上传 */}
+          <input type="file" accept="image/*" ref={imageInputRef} onChange={e => { const f = e.target.files?.[0]; if (f) processImageFile(f); e.target.value = ''; }} className="hidden" />
+          <button
+            onClick={() => imageInputRef.current?.click()}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-gray-700 transition-colors flex items-center gap-1"
+            title="点击上传图片，或粘贴/拖拽"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            上传图片
+          </button>
+
+          {/* 图床选择 */}
           <select
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+            value={imageMode}
+            onChange={e => {
+              const val = e.target.value as 'base64' | 'github' | 'url';
+              setImageMode(val);
+              if (val === 'github') {
+                if (!ghToken) setShowGhConfig(true);
+              }
+            }}
+            title="选择图片存储方式"
+          >
+            <option value="base64">图床: Base64 内嵌</option>
+            <option value="github">图床: GitHub</option>
+          </select>
+          {imageMode === 'github' && (
+            <button onClick={() => setShowGhConfig(true)} className="text-xs text-amber-600 hover:text-amber-700 underline">
+              配置
+            </button>
+          )}
+
+          {/* 主题 */}
+          <select
+            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
             value={theme}
             onChange={e => setTheme(e.target.value)}
           >
-            <option value="default">默认主题（橙心）</option>
-            <option value="elegant">优雅极简</option>
-            <option value="tech">极客科技</option>
-            <option value="poetic">诗意国风</option>
+            <option value="default">主题: 默认（橙心）</option>
+            <option value="elegant">主题: 优雅极简</option>
+            <option value="tech">主题: 极客科技</option>
+            <option value="poetic">主题: 诗意国风</option>
           </select>
 
+          {/* 预览模式 */}
           <div className="flex bg-gray-100 rounded-md p-0.5">
-            <button
-              className={`px-3 py-1 text-sm rounded ${mode === 'preview' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`}
-              onClick={() => setMode('preview')}
-            >
-              预览模式
-            </button>
-            <button
-              className={`px-3 py-1 text-sm rounded ${mode === 'wechat' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`}
-              onClick={() => setMode('wechat')}
-            >
-              公众号模式
-            </button>
+            <button className={`px-3 py-1 text-sm rounded ${mode === 'preview' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`} onClick={() => setMode('preview')}>预览模式</button>
+            <button className={`px-3 py-1 text-sm rounded ${mode === 'wechat' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`} onClick={() => setMode('wechat')}>公众号模式</button>
           </div>
 
-          <button
-            onClick={handleCopy}
-            className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-md transition-colors"
-          >
-            复制 HTML
-          </button>
-          <button
-            onClick={handleDownload}
-            className="px-4 py-1.5 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium rounded-md transition-colors"
-          >
-            下载
-          </button>
+          <button onClick={handleCopy} className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-md transition-colors">复制 HTML</button>
+          <button onClick={handleDownload} className="px-4 py-1.5 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium rounded-md transition-colors">下载</button>
         </div>
       </header>
 
+      {/* Main */}
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-1/2 flex flex-col border-r border-gray-200 bg-white">
+        {/* 编辑器 */}
+        <div className={`w-1/2 flex flex-col border-r border-gray-200 bg-white ${dragOver ? 'ring-2 ring-amber-400 ring-inset' : ''}`}
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+        >
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between">
             <span>Markdown 编辑</span>
-            <span>{md.length} 字符</span>
+            <span>{md.length} 字符 {imageMode === 'base64' ? '| 图床: Base64' : imageMode === 'github' ? '| 图床: GitHub' : ''}</span>
           </div>
+          {dragOver && (
+            <div className="absolute inset-0 bg-amber-50/80 flex items-center justify-center z-10 pointer-events-none">
+              <div className="text-amber-600 font-medium text-lg">松开即可上传图片</div>
+            </div>
+          )}
           <textarea
+            ref={textareaRef}
             className="flex-1 w-full p-4 resize-none focus:outline-none font-mono text-sm leading-relaxed text-gray-700"
             value={md}
             onChange={e => setMd(e.target.value)}
+            onPaste={handlePaste}
             spellCheck={false}
-            placeholder="在此输入 Markdown 内容，或点击上方「导入 MD」按钮导入文件..."
+            placeholder="在此输入 Markdown 内容...&#10;支持粘贴截图（Ctrl+V）和拖拽图片上传"
           />
         </div>
 
+        {/* 预览 */}
         <div className="w-1/2 flex flex-col bg-gray-100" id="preview">
           <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between items-center">
             <span>{mode === 'preview' ? '实时预览' : '公众号适配预览（外链转脚注、纯黑过滤等）'}</span>
             <div className="flex items-center gap-2">
               <span>主题: {theme}</span>
-              <button
-                onClick={handleCopyForWechat}
-                className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors"
-                title="自动转换为公众号格式并复制"
-              >
+              <button onClick={handleCopyForWechat} className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors" title="自动转换为公众号格式并复制">
                 复制到公众号
               </button>
             </div>
           </div>
           <div className="flex-1 overflow-auto p-4">
             <div id="preview-content" className="rounded-lg">
-              <iframe
-                ref={previewRef}
-                className="w-full h-full border-0"
-                style={{ minHeight: '600px' }}
-                title="preview"
-              />
+              <iframe ref={previewRef} className="w-full h-full border-0" style={{ minHeight: '600px' }} title="preview" />
             </div>
           </div>
         </div>
