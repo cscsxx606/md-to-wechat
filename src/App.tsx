@@ -3,9 +3,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 /* ============================================================
    主题样式
    ============================================================ */
+/* ============================================================
+   主题样式 —— 共 12 款主题
+   ============================================================ */
 const THEME_CSS: Record<string, string> = {
-  default: `/* 全局属性 */
-#nice { font-size: 15px; color: #333333; line-height: 1.75; word-spacing: 1px; letter-spacing: 1px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 680px; margin: 0 auto; }
+  /* ── 1. 默认（橙心）── */
+  default: `#nice { font-size: 15px; color: #333333; line-height: 1.75; word-spacing: 1px; letter-spacing: 1px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 680px; margin: 0 auto; }
 #nice p { margin: 10px 0; color: #4a4a4a; line-height: 1.8; font-size: 15px; }
 #nice h1 { font-size: 24px; font-weight: bold; color: #1a1a1a; text-align: center; margin-top: 30px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #f5a623; line-height: 1.4; }
 #nice h2 { font-size: 20px; font-weight: bold; color: #1a1a1a; margin-top: 25px; margin-bottom: 15px; padding-left: 12px; border-left: 4px solid #f5a623; line-height: 1.4; }
@@ -31,6 +34,7 @@ const THEME_CSS: Record<string, string> = {
 #nice em { color: #555555; font-style: italic; }
 #nice del { color: #999999; }`,
 
+  /* ── 2. 优雅极简 ── */
   elegant: `#nice { font-size: 15px; color: #2c3e50; line-height: 1.8; word-spacing: 0.5px; letter-spacing: 0.5px; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
 #nice p { margin: 12px 0; color: #34495e; line-height: 1.9; font-size: 15px; }
 #nice h1 { font-size: 26px; font-weight: 600; color: #1a252f; text-align: left; margin-top: 32px; margin-bottom: 20px; padding-bottom: 8px; border-bottom: 1px solid #ecf0f1; }
@@ -51,6 +55,7 @@ const THEME_CSS: Record<string, string> = {
 #nice hr.nice-hr { border: none; height: 1px; background: #ecf0f1; margin: 28px 0; }
 #nice strong { color: #1a252f; }`,
 
+  /* ── 3. 极客科技 ── */
   tech: `#nice { font-size: 15px; color: #333333; line-height: 1.75; word-spacing: 1px; letter-spacing: 0.5px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 680px; margin: 0 auto; }
 #nice p { margin: 10px 0; color: #444444; line-height: 1.8; font-size: 15px; }
 #nice h1 { font-size: 24px; font-weight: bold; color: #00b894; text-align: center; margin-top: 30px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #00b894; }
@@ -72,6 +77,7 @@ const THEME_CSS: Record<string, string> = {
 #nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #b2bec3, transparent); margin: 30px 0; }
 #nice strong { color: #2d3436; }`,
 
+  /* ── 4. 诗意国风 ── */
   poetic: `#nice { font-size: 16px; color: #3e2723; line-height: 1.85; word-spacing: 2px; letter-spacing: 1px; font-family: "Noto Serif SC", "Songti SC", "SimSun", serif; padding: 24px; max-width: 680px; margin: 0 auto; }
 #nice p { margin: 12px 0; color: #4e342e; line-height: 2; font-size: 16px; text-indent: 2em; }
 #nice h1 { font-size: 26px; font-weight: bold; color: #3e2723; text-align: center; margin-top: 36px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 2px solid #8d6e63; font-family: "Noto Serif SC", "SimSun", serif; }
@@ -90,7 +96,215 @@ const THEME_CSS: Record<string, string> = {
 #nice table.nice-table tbody tr:nth-child(even) { background-color: #faf7f5; }
 #nice img { max-width: 100%; border-radius: 2px; }
 #nice hr.nice-hr { border: none; height: 1px; background: #d7ccc8; margin: 32px 0; }
-#nice strong { color: #3e2723; }`
+#nice strong { color: #3e2723; }`,
+
+  /* ── 5. 薄荷清新 ── */
+  mint: `#nice { font-size: 15px; color: #2d3e36; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
+#nice p { margin: 12px 0; color: #3d5a4c; line-height: 1.85; font-size: 15px; }
+#nice h1 { font-size: 25px; font-weight: bold; color: #1b4332; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #52b788; line-height: 1.4; }
+#nice h2 { font-size: 21px; font-weight: bold; color: #1b4332; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #52b788; line-height: 1.4; }
+#nice h3 { font-size: 18px; font-weight: bold; color: #2d6a4f; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #95d5b2; }
+#nice h4 { font-size: 16px; font-weight: bold; color: #40916c; margin-top: 16px; margin-bottom: 8px; }
+#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #52b788; margin-top: 12px; margin-bottom: 6px; }
+#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #f1f8f5; border-left: 4px solid #52b788; color: #52796f; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
+#nice blockquote.nice-quote p { margin: 0; color: #52796f; }
+#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #f1f8f5; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; border: 1px solid #d8f3dc; }
+#nice pre.code-block code { font-family: "SFMono-Regular", Consolas, monospace; background-color: transparent; padding: 0; font-size: 13px; }
+#nice code.inline-code { background-color: #eafaf1; color: #2d6a4f; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice a { color: #40916c; text-decoration: none; border-bottom: 1px solid #52b788; }
+#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
+#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #3d5a4c; }
+#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+#nice table.nice-table thead { background-color: #52b788; color: #ffffff; }
+#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #d8f3dc; text-align: left; }
+#nice table.nice-table tbody tr:nth-child(even) { background-color: #f1f8f5; }
+#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 10px rgba(45,106,79,0.1); }
+#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #b7e4c7, transparent); margin: 30px 0; }
+#nice strong { color: #1b4332; }
+#nice em { color: #52796f; font-style: italic; }
+#nice del { color: #95a5a6; }`,
+
+  /* ── 6. 深海蓝 ── */
+  ocean: `#nice { font-size: 15px; color: #1e3a5f; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
+#nice p { margin: 12px 0; color: #2c5282; line-height: 1.85; font-size: 15px; }
+#nice h1 { font-size: 25px; font-weight: bold; color: #0f2744; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #3182ce; line-height: 1.4; }
+#nice h2 { font-size: 21px; font-weight: bold; color: #0f2744; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #3182ce; line-height: 1.4; }
+#nice h3 { font-size: 18px; font-weight: bold; color: #1e3a5f; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #63b3ed; }
+#nice h4 { font-size: 16px; font-weight: bold; color: #2b6cb0; margin-top: 16px; margin-bottom: 8px; }
+#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #3182ce; margin-top: 12px; margin-bottom: 6px; }
+#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #ebf8ff; border-left: 4px solid #3182ce; color: #2c5282; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
+#nice blockquote.nice-quote p { margin: 0; color: #2c5282; }
+#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #0f2744; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #e2e8f0; }
+#nice pre.code-block code { color: #e2e8f0; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice code.inline-code { background-color: #ebf8ff; color: #2b6cb0; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice a { color: #2b6cb0; text-decoration: none; border-bottom: 1px solid #3182ce; }
+#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
+#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #2c5282; }
+#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+#nice table.nice-table thead { background-color: #3182ce; color: #ffffff; }
+#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #bee3f8; text-align: left; }
+#nice table.nice-table tbody tr:nth-child(even) { background-color: #ebf8ff; }
+#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 10px rgba(49,130,206,0.15); }
+#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #90cdf4, transparent); margin: 30px 0; }
+#nice strong { color: #0f2744; }
+#nice em { color: #4a6fa5; font-style: italic; }
+#nice del { color: #a0aec0; }`,
+
+  /* ── 7. 樱花粉 ── */
+  sakura: `#nice { font-size: 15px; color: #4a2545; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
+#nice p { margin: 12px 0; color: #6b3a63; line-height: 1.85; font-size: 15px; }
+#nice h1 { font-size: 25px; font-weight: bold; color: #832161; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #db2777; line-height: 1.4; }
+#nice h2 { font-size: 21px; font-weight: bold; color: #832161; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #db2777; line-height: 1.4; }
+#nice h3 { font-size: 18px; font-weight: bold; color: #9d174d; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #f472b6; }
+#nice h4 { font-size: 16px; font-weight: bold; color: #be185d; margin-top: 16px; margin-bottom: 8px; }
+#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #db2777; margin-top: 12px; margin-bottom: 6px; }
+#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #fdf2f8; border-left: 4px solid #db2777; color: #6b3a63; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
+#nice blockquote.nice-quote p { margin: 0; color: #6b3a63; }
+#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #fdf2f8; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; border: 1px solid #fbcfe8; }
+#nice pre.code-block code { font-family: "SFMono-Regular", Consolas, monospace; background-color: transparent; padding: 0; font-size: 13px; }
+#nice code.inline-code { background-color: #fce7f3; color: #be185d; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice a { color: #be185d; text-decoration: none; border-bottom: 1px solid #db2777; }
+#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
+#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #6b3a63; }
+#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+#nice table.nice-table thead { background-color: #db2777; color: #ffffff; }
+#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #fbcfe8; text-align: left; }
+#nice table.nice-table tbody tr:nth-child(even) { background-color: #fdf2f8; }
+#nice img { max-width: 100%; border-radius: 12px; box-shadow: 0 2px 12px rgba(219,39,119,0.12); }
+#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #f9a8d4, transparent); margin: 30px 0; }
+#nice strong { color: #832161; }
+#nice em { color: #9d174d; font-style: italic; }
+#nice del { color: #d8b4c0; }`,
+
+  /* ── 8. 暗夜黑 ── */
+  dark: `#nice { font-size: 15px; color: #e2e8f0; line-height: 1.75; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; background-color: #1a202c; border-radius: 8px; }
+#nice p { margin: 12px 0; color: #cbd5e0; line-height: 1.85; font-size: 15px; }
+#nice h1 { font-size: 25px; font-weight: bold; color: #f7fafc; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #4fd1c5; line-height: 1.4; }
+#nice h2 { font-size: 21px; font-weight: bold; color: #f7fafc; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #4fd1c5; line-height: 1.4; }
+#nice h3 { font-size: 18px; font-weight: bold; color: #e2e8f0; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #81e6d9; }
+#nice h4 { font-size: 16px; font-weight: bold; color: #a0aec0; margin-top: 16px; margin-bottom: 8px; }
+#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #4fd1c5; margin-top: 12px; margin-bottom: 6px; }
+#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #2d3748; border-left: 4px solid #4fd1c5; color: #a0aec0; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
+#nice blockquote.nice-quote p { margin: 0; color: #a0aec0; }
+#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #2d3748; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; border: 1px solid #4a5568; color: #e2e8f0; }
+#nice pre.code-block code { color: #e2e8f0; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice code.inline-code { background-color: #2d3748; color: #4fd1c5; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice a { color: #4fd1c5; text-decoration: none; border-bottom: 1px solid #4fd1c5; }
+#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
+#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #cbd5e0; }
+#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+#nice table.nice-table thead { background-color: #4fd1c5; color: #1a202c; }
+#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #4a5568; text-align: left; }
+#nice table.nice-table tbody tr:nth-child(even) { background-color: #2d3748; }
+#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.4); }
+#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #4a5568, transparent); margin: 30px 0; }
+#nice strong { color: #f7fafc; }
+#nice em { color: #a0aec0; font-style: italic; }
+#nice del { color: #718096; }`,
+
+  /* ── 9. 砖红复古 ── */
+  retro: `#nice { font-size: 15px; color: #3c2f2f; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: "Noto Serif SC", Georgia, serif; padding: 24px; max-width: 680px; margin: 0 auto; background-color: #fdf6e3; }
+#nice p { margin: 12px 0; color: #5d4037; line-height: 1.9; font-size: 15px; }
+#nice h1 { font-size: 26px; font-weight: bold; color: #5d4037; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #bf360c; line-height: 1.4; font-family: "Noto Serif SC", Georgia, serif; }
+#nice h2 { font-size: 22px; font-weight: bold; color: #5d4037; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #bf360c; line-height: 1.4; font-family: "Noto Serif SC", Georgia, serif; }
+#nice h3 { font-size: 18px; font-weight: bold; color: #6d4c41; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #e65100; }
+#nice h4 { font-size: 16px; font-weight: bold; color: #795548; margin-top: 16px; margin-bottom: 8px; }
+#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #8d6e63; margin-top: 12px; margin-bottom: 6px; }
+#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #fff8e1; border-left: 4px solid #bf360c; color: #5d4037; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
+#nice blockquote.nice-quote p { margin: 0; color: #5d4037; }
+#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #3e2723; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #efebe9; }
+#nice pre.code-block code { color: #efebe9; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice code.inline-code { background-color: #fff8e1; color: #bf360c; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice a { color: #bf360c; text-decoration: none; border-bottom: 1px solid #bf360c; }
+#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
+#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #5d4037; }
+#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+#nice table.nice-table thead { background-color: #bf360c; color: #ffffff; }
+#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #ffe0b2; text-align: left; }
+#nice table.nice-table tbody tr:nth-child(even) { background-color: #fff8e1; }
+#nice img { max-width: 100%; border-radius: 4px; box-shadow: 0 2px 8px rgba(191,54,12,0.15); border: 1px solid #efebe9; }
+#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #d7ccc8, transparent); margin: 30px 0; }
+#nice strong { color: #3e2723; }
+#nice em { color: #6d4c41; font-style: italic; }
+#nice del { color: #bcaaa4; }`,
+
+  /* ── 10. 紫罗兰 ── */
+  violet: `#nice { font-size: 15px; color: #3b0764; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
+#nice p { margin: 12px 0; color: #581c87; line-height: 1.85; font-size: 15px; }
+#nice h1 { font-size: 25px; font-weight: bold; color: #4c1d95; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #8b5cf6; line-height: 1.4; }
+#nice h2 { font-size: 21px; font-weight: bold; color: #4c1d95; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #8b5cf6; line-height: 1.4; }
+#nice h3 { font-size: 18px; font-weight: bold; color: #6d28d9; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #c4b5fd; }
+#nice h4 { font-size: 16px; font-weight: bold; color: #7c3aed; margin-top: 16px; margin-bottom: 8px; }
+#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #8b5cf6; margin-top: 12px; margin-bottom: 6px; }
+#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #f5f3ff; border-left: 4px solid #8b5cf6; color: #581c87; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
+#nice blockquote.nice-quote p { margin: 0; color: #581c87; }
+#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #2e1065; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #e9d5ff; }
+#nice pre.code-block code { color: #e9d5ff; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice code.inline-code { background-color: #ede9fe; color: #7c3aed; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice a { color: #7c3aed; text-decoration: none; border-bottom: 1px solid #8b5cf6; }
+#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
+#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #581c87; }
+#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+#nice table.nice-table thead { background-color: #8b5cf6; color: #ffffff; }
+#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #ddd6fe; text-align: left; }
+#nice table.nice-table tbody tr:nth-child(even) { background-color: #f5f3ff; }
+#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 10px rgba(139,92,246,0.12); }
+#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #c4b5fd, transparent); margin: 30px 0; }
+#nice strong { color: #4c1d95; }
+#nice em { color: #7c3aed; font-style: italic; }
+#nice del { color: #c4b5fd; }`,
+
+  /* ── 11. 石墨灰 ── */
+  graphite: `#nice { font-size: 15px; color: #374151; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
+#nice p { margin: 12px 0; color: #4b5563; line-height: 1.85; font-size: 15px; }
+#nice h1 { font-size: 25px; font-weight: bold; color: #111827; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #6366f1; line-height: 1.4; }
+#nice h2 { font-size: 21px; font-weight: bold; color: #111827; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #6366f1; line-height: 1.4; }
+#nice h3 { font-size: 18px; font-weight: bold; color: #1f2937; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #a5b4fc; }
+#nice h4 { font-size: 16px; font-weight: bold; color: #374151; margin-top: 16px; margin-bottom: 8px; }
+#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #6366f1; margin-top: 12px; margin-bottom: 6px; }
+#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #f5f7ff; border-left: 4px solid #6366f1; color: #4b5563; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
+#nice blockquote.nice-quote p { margin: 0; color: #4b5563; }
+#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #1f2937; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #e5e7eb; }
+#nice pre.code-block code { color: #e5e7eb; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice code.inline-code { background-color: #eef2ff; color: #4f46e5; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice a { color: #4f46e5; text-decoration: none; border-bottom: 1px solid #6366f1; }
+#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
+#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #4b5563; }
+#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+#nice table.nice-table thead { background-color: #6366f1; color: #ffffff; }
+#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #c7d2fe; text-align: left; }
+#nice table.nice-table tbody tr:nth-child(even) { background-color: #f5f7ff; }
+#nice img { max-width: 100%; border-radius: 6px; box-shadow: 0 2px 10px rgba(99,102,241,0.1); }
+#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #a5b4fc, transparent); margin: 30px 0; }
+#nice strong { color: #111827; }
+#nice em { color: #6b7280; font-style: italic; }
+#nice del { color: #9ca3af; }`,
+
+  /* ── 12. 阳光金 ── */
+  sunshine: `#nice { font-size: 15px; color: #451a03; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
+#nice p { margin: 12px 0; color: #78350f; line-height: 1.85; font-size: 15px; }
+#nice h1 { font-size: 25px; font-weight: bold; color: #92400e; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #f59e0b; line-height: 1.4; }
+#nice h2 { font-size: 21px; font-weight: bold; color: #92400e; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #f59e0b; line-height: 1.4; }
+#nice h3 { font-size: 18px; font-weight: bold; color: #b45309; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #fcd34d; }
+#nice h4 { font-size: 16px; font-weight: bold; color: #d97706; margin-top: 16px; margin-bottom: 8px; }
+#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #f59e0b; margin-top: 12px; margin-bottom: 6px; }
+#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #fffbeb; border-left: 4px solid #f59e0b; color: #78350f; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
+#nice blockquote.nice-quote p { margin: 0; color: #78350f; }
+#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #451a03; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #fef3c7; }
+#nice pre.code-block code { color: #fef3c7; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice code.inline-code { background-color: #fef3c7; color: #b45309; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
+#nice a { color: #d97706; text-decoration: none; border-bottom: 1px solid #f59e0b; }
+#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
+#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #78350f; }
+#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
+#nice table.nice-table thead { background-color: #f59e0b; color: #451a03; }
+#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #fde68a; text-align: left; }
+#nice table.nice-table tbody tr:nth-child(even) { background-color: #fffbeb; }
+#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 10px rgba(245,158,11,0.15); }
+#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #fcd34d, transparent); margin: 30px 0; }
+#nice strong { color: #451a03; }
+#nice em { color: #b45309; font-style: italic; }
+#nice del { color: #d4a574; }`
 };
 
 /* ============================================================
@@ -717,6 +931,14 @@ export default function App() {
             <option value="elegant">主题: 优雅极简</option>
             <option value="tech">主题: 极客科技</option>
             <option value="poetic">主题: 诗意国风</option>
+            <option value="mint">主题: 薄荷清新</option>
+            <option value="ocean">主题: 深海蓝</option>
+            <option value="sakura">主题: 樱花粉</option>
+            <option value="dark">主题: 暗夜黑</option>
+            <option value="retro">主题: 砖红复古</option>
+            <option value="violet">主题: 紫罗兰</option>
+            <option value="graphite">主题: 石墨灰</option>
+            <option value="sunshine">主题: 阳光金</option>
           </select>
 
           {/* 预览模式 */}
