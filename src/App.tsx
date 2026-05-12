@@ -211,8 +211,13 @@ function simpleMarkdownToHtml(md: string): string {
   html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
   html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
   html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-  // 引用
-  html = html.replace(/^> (.*$)/gim, '<blockquote class="nice-quote"><p>$1</p></blockquote>');
+  // 引用：支持多行连续引用
+  html = html.replace(/((?:^>\s*.+(?:\n|$))+)/gm, (match) => {
+    const lines = match.trim().split('\n').map(line => line.replace(/^>\s*/, '')).filter(line => line.trim());
+    if (lines.length === 0) return '';
+    return `<blockquote class="nice-quote"><p>${lines.join('<br/>')}</p></blockquote>`;
+  });
+  html = html.replace(/^>\s*$/gm, '');
   // 强调
   html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<em><strong>$1</strong></em>');
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -237,17 +242,18 @@ function simpleMarkdownToHtml(md: string): string {
     return table;
   });
   // 列表
-  html = html.replace(/((?:^\s*[-*+] .+\n)+)/gm, (match) => {
+  html = html.replace(/((?:^\s*[-*+] .+(?:\n|$))+)/gm, (match) => {
     const items = match.trim().split('\n').map(line => `<li>${line.replace(/^\s*[-*+]\s*/, '')}</li>`).join('');
     return `<ul class="nice-ul">${items}</ul>`;
   });
-  html = html.replace(/((?:^\s*\d+\. .+\n)+)/gm, (match) => {
+  html = html.replace(/((?:^\s*\d+\. .+(?:\n|$))+)/gm, (match) => {
     const items = match.trim().split('\n').map(line => `<li>${line.replace(/^\s*\d+\.\s*/, '')}</li>`).join('');
     return `<ol class="nice-ol">${items}</ol>`;
   });
   // 分割线
   html = html.replace(/^---+$/gm, '<hr class="nice-hr"/>');
-  // 段落
+  // 段落处理：智能识别块级元素，避免错误包裹
+  const blockLevelRegex = /^<(blockquote|table|ul|ol|pre|hr|h[1-6]|img|div)\b/;
   const lines = html.split('\n');
   let result = '';
   let inPara = false;
@@ -258,7 +264,7 @@ function simpleMarkdownToHtml(md: string): string {
       result += '\n';
       continue;
     }
-    if (trimmed.startsWith('<') && !trimmed.startsWith('<img')) {
+    if (blockLevelRegex.test(trimmed)) {
       if (inPara) { result += '</p>'; inPara = false; }
       result += line + '\n';
     } else {
@@ -502,16 +508,85 @@ export default function App() {
     e.target.value = '';
   };
 
+  /* ============================================================
+   复制到剪贴板（支持 text/html MIME 类型）
+   ============================================================ */
+  async function copyToClipboard(html: string, plainFallback: string) {
+    // 优先尝试写入 text/html（微信编辑器需要此格式才能识别富文本）
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+      try {
+        const htmlBlob = new Blob([html], { type: 'text/html' });
+        const textBlob = new Blob([plainFallback], { type: 'text/plain' });
+        const item = new ClipboardItem({
+          'text/html': htmlBlob,
+          'text/plain': textBlob,
+        });
+        await navigator.clipboard.write([item]);
+        return true;
+      } catch {
+        // 降级到 writeText
+      }
+    }
+    // 降级：仅写入纯文本
+    try {
+      await navigator.clipboard.writeText(html);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /* 检测 Base64 图片总大小并给出提示 */
+  function checkBase64Images(markdown: string): { hasBase64: boolean; totalKb: number; count: number } {
+    const base64Regex = /!\[.*?\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
+    let match;
+    let totalKb = 0;
+    let count = 0;
+    while ((match = base64Regex.exec(markdown)) !== null) {
+      const base64 = match[1];
+      // base64 长度 * 0.75 ≈ 字节数
+      const bytes = (base64.length * 3) / 4;
+      totalKb += bytes / 1024;
+      count++;
+    }
+    return { hasBase64: count > 0, totalKb, count };
+  }
+
   /* 复制 / 下载 */
   const handleCopy = async () => {
     const output = generateOutputHtml(md, theme, mode);
-    try { await navigator.clipboard.writeText(output); showToast('已复制 HTML 到剪贴板！'); }
-    catch { showToast('复制失败，请手动复制'); }
+    const ok = await copyToClipboard(output, output);
+    showToast(ok ? '已复制 HTML 到剪贴板！' : '复制失败，请手动复制');
   };
+
   const handleCopyForWechat = async () => {
+    // 检测 Base64 图片
+    const imgCheck = checkBase64Images(md);
+    if (imgCheck.hasBase64 && imgCheck.totalKb > 500) {
+      const proceed = window.confirm(
+        `检测到 ${imgCheck.count} 张 Base64 内嵌图片，共 ${imgCheck.totalKb.toFixed(0)} KB。\n\n` +
+        `Base64 图片过大会导致粘贴到公众号编辑器失败或卡顿。\n\n` +
+        `建议改用 GitHub 图床（顶部「图床」下拉框切换）。\n\n` +
+        `是否仍要继续复制？`
+      );
+      if (!proceed) return;
+    }
+
     const output = generateOutputHtml(md, theme, 'wechat');
-    try { await navigator.clipboard.writeText(output); showToast('已复制到公众号格式！'); }
-    catch { showToast('复制失败'); }
+    // 为微信生成纯文本降级版本（去掉 style 标签，保留可读性）
+    const plainFallback = md.replace(/!\[([^\]]*)\]\((data:image\/[^)]+)\)/g, '[$1]')
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[$1]');
+
+    const ok = await copyToClipboard(output, plainFallback);
+    if (ok) {
+      if (imgCheck.hasBase64) {
+        showToast('已复制！Base64 图片较大，如粘贴失败请改用 GitHub 图床');
+      } else {
+        showToast('已复制到公众号格式！直接粘贴到公众号编辑器即可');
+      }
+    } else {
+      showToast('复制失败，请使用「下载」按钮保存后手动复制');
+    }
   };
   const handleDownload = () => {
     const output = generateOutputHtml(md, theme, mode);
