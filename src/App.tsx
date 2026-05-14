@@ -449,7 +449,7 @@ export default function App() {
     if (imageMode === 'base64') {
       const reader = new FileReader();
       reader.onload = () => {
-        appendMd(`![${file.name}](${reader.result as string})`, true);
+        appendMd(`![](${reader.result as string})`, true);  // alt 为空，避免显示图注
       };
       reader.readAsDataURL(blob);
       try {
@@ -463,7 +463,7 @@ export default function App() {
             method: 'PUT', headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: `Upload ${file.name}`, content: base64Content, branch }),
           });
-          if (res.ok) appendMd(`![${file.name}](${GITHUB_CDN_BASE}${fileName})`);
+          if (res.ok) appendMd(`![](${GITHUB_CDN_BASE}${fileName})`);  // alt 为空，避免显示图注
           else { const err = await res.json(); alert(`GitHub 上传失败: ${err.message}`); }
         };
         base64Reader.readAsDataURL(blob);
