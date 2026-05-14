@@ -1,29 +1,30 @@
 /**
- * App.tsx — MD to WeChat 公众号排版编辑器 v3.3
- * 新增：base64 图片引用定义分离存储，编辑器只显示简短引用标记
+ * App.tsx — MD to WeChat 公众号排版编辑器 v4.0
+ * 重构：全新 UI 设计、暗色模式、手机预览、编辑器行号
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { THEME_CSS, THEME_META, ThemeId } from './themes';
 import { parseMarkdown, extractToc, countWords, estimateReadingTime } from './parser';
 import { adaptForWechat, copyToClipboard } from './wechat-adapter';
+import { useDarkMode } from './hooks/useDarkMode';
 
 const GITHUB_CDN_BASE = 'https://raw.githubusercontent.com/cscsxx606/md-to-wechat/main/images/';
 const DRAFT_KEY = 'md2wx_draft';
 const SPLIT_KEY = 'md2wx_split';
 
-// ─── Prism.js 代码高亮 CSS（提取为常量，避免每次 render 重建）──
+// ─── Prism.js 代码高亮 CSS ────────────────────────────
 const PRISM_CSS = (isDark: boolean) => `<style>
-  code[class*="language-"], pre[class*="language-"] { color:#333; background:0 0; font-family:"SFMono-Regular",Consolas,Monaco,monospace; font-size:13px; text-align:left; white-space:pre; word-spacing:normal; word-break:normal; word-wrap:normal; line-height:1.6; tab-size:4; hyphens:none; }
-  pre[class*="language-"] { padding:1em; margin:.5em 0; overflow:auto; border-radius:4px; }
-  :not(pre)>code[class*="language-"] { padding:.1em; border-radius:.3em; }
+  code[class*="language-"], pre[class*="language-"] { color:#333; background:0 0; font-family:"JetBrains Mono","Fira Code",Consolas,monospace; font-size:13px; text-align:left; white-space:pre; word-spacing:normal; word-break:normal; word-wrap:normal; line-height:1.6; tab-size:4; hyphens:none; }
+  pre[class*="language-"] { padding:1em; margin:.5em 0; overflow:auto; border-radius:8px; }
+  :not(pre)>code[class*="language-"] { padding:.2em .4em; border-radius:4px; }
   .token.comment,.token.block-comment,.token.prolog,.token.doctype,.token.cdata { color:#7d8b99; }
   .token.punctuation { color:#5f6364; }
   .token.property,.token.tag,.token.boolean,.token.number,.token.function-name,.token.constant,.token.symbol,.token.deleted { color:#c92c2c; }
   .token.selector,.token.attr-name,.token.string,.token.char,.token.function,.token.builtin,.token.inserted { color:#2f9c0a; }
   .token.operator,.token.entity,.token.url,.token.variable { color:#a67f59; }
   .token.atrule,.token.attr-value,.token.keyword,.token.class-name { color:#1990b8; }
-  .token.regex,.token.important { color:#e90; } .token.important,.token.bold { font-weight:700; } .token.italic { font-style:italic; } .token.entity { cursor:help; }
+  .token.regex,.token.important { color:#e90; }
   ${isDark ? `
   code[class*="language-"], pre[class*="language-"] { color:#e0e0e0; }
   .token.comment { color:#6a737d; } .token.punctuation { color:#9e9e9e; }
@@ -31,8 +32,8 @@ const PRISM_CSS = (isDark: boolean) => `<style>
   .token.selector,.token.attr-name,.token.string,.token.char,.token.function,.token.builtin,.token.inserted { color:#69f0ae; }
   .token.operator,.token.entity,.token.url,.token.variable { color:#ffd54f; }
   .token.atrule,.token.attr-value,.token.keyword,.token.class-name { color:#82b1ff; }` : ''}
-  .nice-code { background:#f8f9fa; border:1px solid #eaeaea; }
-  .nice-footnotes { padding:12px 16px; background:#fafafa; border-radius:6px; margin-top:20px; }
+  .nice-code { background:${isDark ? '#1e1e1e' : '#f8f9fa'}; border:1px solid ${isDark ? '#333' : '#eaeaea'}; border-radius:8px; }
+  .nice-footnotes { padding:12px 16px; background:${isDark ? '#1e1e1e' : '#fafafa'}; border-radius:8px; margin-top:20px; }
   .nice-figure { margin:16px 0; } .nice-figcaption { font-size:13px; color:#888; margin-top:6px; line-height:1.6; }
   .nice-gallery { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; } .nice-gallery img { width:100%; height:auto; object-fit:cover; border-radius:4px; }
   .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
@@ -65,18 +66,20 @@ const DEFAULT_MD = `# 欢迎使用 MD to WeChat
 
 type ImageMode = 'base64' | 'github';
 type GitHubConfig = { token: string; repo: string; branch: string };
+type PreviewMode = 'desktop' | 'mobile';
 
-// ─── Markdown 工具栏配置 ────────────────────────────
+// ─── 工具栏配置 ────────────────────────────
 interface ToolbarAction {
-  key: string;  label: string;  title: string;
-  prefix: string;  suffix: string;  block?: boolean;
+  key: string; label: string; title: string;
+  prefix: string; suffix: string; block?: boolean;
+  icon?: string;
 }
 
 const TOOLBAR_ITEMS: ToolbarAction[] = [
   { key: 'bold', label: 'B', title: '粗体 (Ctrl+B)', prefix: '**', suffix: '**' },
   { key: 'italic', label: 'I', title: '斜体 (Ctrl+I)', prefix: '*', suffix: '*' },
-  { key: 'strike', label: 'S', title: '删除线', prefix: '~~', suffix: '~~' },
-  { key: 'code', label: '`', title: '行内代码', prefix: '`', suffix: '`' },
+  { key: 'strike', label: 'S̶', title: '删除线', prefix: '~~', suffix: '~~' },
+  { key: 'code', label: '<>', title: '行内代码', prefix: '`', suffix: '`' },
   { key: 'divider', label: '', title: '', prefix: '', suffix: '' },
   { key: 'h1', label: 'H1', title: '一级标题', prefix: '# ', suffix: '', block: true },
   { key: 'h2', label: 'H2', title: '二级标题', prefix: '## ', suffix: '', block: true },
@@ -92,18 +95,10 @@ const TOOLBAR_ITEMS: ToolbarAction[] = [
   { key: 'hr', label: '—', title: '分割线', prefix: '\n---\n', suffix: '', block: true },
 ];
 
-// ─── 图片引用信息 ────────────────────────────
-interface ImageRef {
-  id: string;
-  alt: string;
-  url: string;
-  sizeKB: number;
-}
+interface ImageRef { id: string; alt: string; url: string; sizeKB: number; }
 
-// 将 Markdown 与 base64 图片映射合并为完整 Markdown
 function mergeBase64Refs(markdown: string, base64Map: Record<string, string>): string {
   if (!base64Map || Object.keys(base64Map).length === 0) return markdown;
-  // 过滤掉 markdown 中已存在的引用定义，避免重复
   const refs = Object.entries(base64Map)
     .filter(([id]) => !markdown.includes(`[${id}]:`))
     .map(([id, url]) => `[${id}]: ${url}`)
@@ -112,34 +107,26 @@ function mergeBase64Refs(markdown: string, base64Map: Record<string, string>): s
   return markdown.trimEnd() + '\n\n' + refs + '\n';
 }
 
+// ─── 主应用 ────────────────────────────
 export default function App() {
+  const { isDark, toggle: toggleDark } = useDarkMode();
+
   // ── 状态 ──
   const [md, setMd] = useState(() => {
     try {
       const draft = localStorage.getItem(DRAFT_KEY);
-      if (draft) {
-        const parsed = JSON.parse(draft);
-        return parsed.md || DEFAULT_MD;
-      }
+      if (draft) { const p = JSON.parse(draft); return p.md || DEFAULT_MD; }
     } catch {}
     return DEFAULT_MD;
   });
-
-  // 🆕 新增：base64 图片引用定义独立存储，编辑器不显示
   const [imageBase64Map, setImageBase64Map] = useState<Record<string, string>>(() => {
-    try {
-      const draft = localStorage.getItem(DRAFT_KEY);
-      if (draft) {
-        const parsed = JSON.parse(draft);
-        return parsed.imageBase64Map || {};
-      }
-    } catch { return {}; }
+    try { const d = localStorage.getItem(DRAFT_KEY); if (d) { const p = JSON.parse(d); return p.imageBase64Map || {}; } } catch { return {}; }
   });
-
   const [theme, setTheme] = useState<ThemeId>(() => {
     try { const d = localStorage.getItem(DRAFT_KEY); return d ? JSON.parse(d).theme || 'default' : 'default'; } catch { return 'default'; }
   });
   const [mode, setMode] = useState<'preview' | 'wechat'>('preview');
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('desktop');
   const [showToc, setShowToc] = useState(false);
   const [autoSpace, setAutoSpace] = useState(true);
   const [firstIndent, setFirstIndent] = useState(false);
@@ -149,69 +136,47 @@ export default function App() {
   const [copySuccessHtml, setCopySuccessHtml] = useState(false);
   const [importedFileName, setImportedFileName] = useState('');
   const [showImageToolbar, setShowImageToolbar] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
-  const [draftRestored, setDraftRestored] = useState(() => {
-    try { return !!localStorage.getItem(DRAFT_KEY); } catch { return false; }
-  });
+  const [draftRestored, setDraftRestored] = useState(() => { try { return !!localStorage.getItem(DRAFT_KEY); } catch { return false; } });
   const [spacing, setSpacing] = useState<'compact' | 'normal' | 'loose'>('normal');
-  const [splitPct, setSplitPct] = useState(() => {
-    try { const v = localStorage.getItem(SPLIT_KEY); return v ? parseInt(v) : 50; } catch { return 50; }
-  });
-  const [githubConfig, setGithubConfig] = useState<GitHubConfig>(() => {
-    try {
-      const saved = sessionStorage.getItem('md2wx_github');
-      return saved ? JSON.parse(saved) : { token: '', repo: '', branch: 'main' };
-    } catch { return { token: '', repo: '', branch: 'main' }; }
-  });
+  const [splitPct, setSplitPct] = useState(() => { try { const v = localStorage.getItem(SPLIT_KEY); return v ? parseInt(v) : 50; } catch { return 50; } });
+  const [githubConfig, setGithubConfig] = useState<GitHubConfig>(() => { try { const s = sessionStorage.getItem('md2wx_github'); return s ? JSON.parse(s) : { token: '', repo: '', branch: 'main' }; } catch { return { token: '', repo: '', branch: 'main' }; } });
   const [showGithubConfig, setShowGithubConfig] = useState(false);
   const [showImagePanel, setShowImagePanel] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLIFrameElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const imgRefCounter = useRef(0);
+  const editorLinesRef = useRef<HTMLDivElement>(null);
 
-  // 初始化计数器 + 迁移旧版本内联 base64 引用定义
+  // ── 兼容旧版本 + 恢复计数器 ──
   useEffect(() => {
-    // 1. 从 imageBase64Map 恢复计数器
     const keys = Object.keys(imageBase64Map);
     let max = 0;
-    for (const key of keys) {
-      const match = key.match(/^img-(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > max) max = num;
-      }
-    }
+    for (const key of keys) { const m = key.match(/^img-(\d+)$/); if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; } }
     imgRefCounter.current = max;
-
-    // 2. 兼容旧版本：如果 imageBase64Map 为空，但 md 中包含内联 base64 引用定义，则迁移
     if (keys.length === 0) {
       const inlineRefRegex = /^\[([^\]]+)\]:\s+(data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+)$/gm;
       const newMap: Record<string, string> = {};
       let m;
-      while ((m = inlineRefRegex.exec(md)) !== null) {
-        newMap[m[1]] = m[2];
-      }
+      while ((m = inlineRefRegex.exec(md)) !== null) { newMap[m[1]] = m[2]; }
       if (Object.keys(newMap).length > 0) {
         setImageBase64Map(newMap);
-        // 清理 md 中的内联引用定义
         setMd((prev: string) => prev.replace(/^\[([^\]]+)\]:\s+data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+\n?/gm, '').replace(/\n{3,}/g, '\n\n'));
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 只在组件挂载时执行一次
+  }, []);
 
-  // ── 从 imageBase64Map 提取图片引用信息 ──
+  // ── 提取图片引用 ──
   const extractImageRefs = useCallback((markdown: string, base64Map: Record<string, string>): ImageRef[] => {
     const refs: ImageRef[] = [];
-    // 匹配引用式图片标记 ![alt][id]
     const refMarkRegex = /!\[([^\]]*)\]\[([^\]]+)\]/g;
     let match;
     while ((match = refMarkRegex.exec(markdown)) !== null) {
-      const alt = match[1];
-      const id = match[2];
+      const alt = match[1], id = match[2];
       const url = base64Map[id];
       if (url && url.startsWith('data:image/')) {
         const base64Part = url.split(',')[1];
@@ -221,64 +186,58 @@ export default function App() {
     }
     return refs;
   }, []);
-
   const imageRefs = useMemo(() => extractImageRefs(md, imageBase64Map), [md, imageBase64Map, extractImageRefs]);
 
   const wordCount = useMemo(() => countWords(md), [md]);
   const readingTime = useMemo(() => estimateReadingTime(md), [md]);
   const tocItems = useMemo(() => extractToc(md), [md]);
+  const _tocCount = tocItems.length; // 避免未使用警告
 
-  // ── 自动保存草稿（防抖 1 秒）──
+  // 编辑器行号
+  const editorLineCount = useMemo(() => md.split('\n').length, [md]);
+
+  // ── 自动保存 ──
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ md, theme, imageBase64Map })); } catch {}
-    }, 1000);
+    saveTimer.current = setTimeout(() => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ md, theme, imageBase64Map })); } catch {} }, 1000);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [md, theme, imageBase64Map]);
 
   // ── 渲染 HTML ──
   const renderHtml = useCallback((inputMd: string, inputTheme: ThemeId, inputMode: 'preview' | 'wechat') => {
-    // 🆕 合并 base64 引用定义后再渲染
     const fullMd = mergeBase64Refs(inputMd, imageBase64Map);
-
     const css = THEME_CSS[inputTheme] || THEME_CSS.default;
     let extraCss = '';
     if (firstIndent) extraCss += `#nice p.nice-indent, #nice p { text-indent:2em; }`;
     const spacingMap = { compact: '6px', normal: '12px', loose: '20px' };
     extraCss += `#nice p { margin-top:${spacingMap[spacing]} !important; margin-bottom:${spacingMap[spacing]} !important; }`;
-    if (inputMode === 'wechat') {
-      extraCss += `#nice, #nice p, #nice li, #nice td, #nice th { font-size:15px !important; }`;
-    }
-
+    if (inputMode === 'wechat') extraCss += `#nice, #nice p, #nice li, #nice td, #nice th { font-size:15px !important; }`;
     let bodyHtml = parseMarkdown(fullMd, { autoSpace, showToc, firstIndent });
     if (inputMode === 'wechat') bodyHtml = adaptForWechat(bodyHtml);
-
     const wrapped = `<div id="nice">${bodyHtml}</div>`;
-    const prismCSS = PRISM_CSS(inputTheme === 'dark');
-
+    const prismCSS = PRISM_CSS(isDark);
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;">${wrapped}</body></html>`;
-  }, [autoSpace, showToc, firstIndent, spacing, imageBase64Map]);
+<style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;background:${isDark ? '#0f0f0f' : '#fff'};">${wrapped}</body></html>`;
+  }, [autoSpace, showToc, firstIndent, spacing, imageBase64Map, isDark]);
 
-  // ── iframe 预览优化：分离样式初始化和内容更新 ──
+  // ── iframe 预览 ──
   useEffect(() => {
     const iframe = previewRef.current;
     if (!iframe) return;
     const doc = iframe.contentDocument;
     if (!doc) return;
     const css = THEME_CSS[theme] || THEME_CSS.default;
-    const prismCSS = PRISM_CSS(theme === 'dark');
+    const prismCSS = PRISM_CSS(isDark);
     let extraCss = '';
     if (firstIndent) extraCss += `#nice p.nice-indent, #nice p { text-indent:2em; }`;
     const spacingMap = { compact: '6px', normal: '12px', loose: '20px' };
     extraCss += `#nice p { margin-top:${spacingMap[spacing]} !important; margin-bottom:${spacingMap[spacing]} !important; }`;
     if (mode === 'wechat') extraCss += `#nice, #nice p, #nice li, #nice td, #nice th { font-size:15px !important; }`;
     doc.open();
-    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;"></body></html>`);
+    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;background:${isDark ? '#0f0f0f' : '#fff'};"></body></html>`);
     doc.close();
-  }, [theme, spacing, firstIndent, mode]);
+  }, [theme, spacing, firstIndent, mode, isDark]);
 
   useEffect(() => {
     const doc = previewRef.current?.contentDocument;
@@ -287,7 +246,7 @@ export default function App() {
     const bodyHtml = parseMarkdown(fullMd, { autoSpace, showToc, firstIndent });
     const adapted = mode === 'wechat' ? adaptForWechat(bodyHtml) : bodyHtml;
     doc.body.innerHTML = `<div id="nice">${adapted}</div>`;
-  }, [md, autoSpace, showToc, firstIndent, mode, imageBase64Map]);
+  }, [md, autoSpace, showToc, firstIndent, mode, imageBase64Map, isDark]);
 
   // ── 复制 ──
   const handleCopyForWechat = useCallback(async () => {
@@ -315,21 +274,18 @@ export default function App() {
   }, [md, theme, mode, renderHtml]);
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleDownload(); }
-    };
+    const handler = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleDownload(); } };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [handleDownload]);
 
-  // ── 文本选区操作 ──
+  // ── 编辑器操作 ──
   const wrapSelection = useCallback((prefix: string, suffix: string, block?: boolean) => {
     const ta = textareaRef.current;
     if (!ta) return;
     const start = ta.selectionStart, end = ta.selectionEnd;
     const text = ta.value;
     const sel = text.substring(start, end);
-
     if (block) {
       const lineStart = text.lastIndexOf('\n', start - 1) + 1;
       const beforeLine = text.slice(0, lineStart);
@@ -370,22 +326,32 @@ export default function App() {
     wrapSelection(action.prefix, action.suffix, action.block);
   }, [wrapSelection, insertTable]);
 
+  // ── 快捷键 ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        const map: Record<string, ToolbarAction> = {
+          'b': TOOLBAR_ITEMS[0], 'i': TOOLBAR_ITEMS[1],
+          'k': TOOLBAR_ITEMS[10], // link
+        };
+        if (map[key]) { e.preventDefault(); handleToolbar(map[key]); }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleToolbar]);
+
   // ── 追加 Markdown ──
   const appendMd = useCallback((text: string, isBase64Image = false) => {
     if (isBase64Image) {
       const imgMatch = text.match(/!\[([^\]]*)\]\(([^)]+)\)/);
-      if (!imgMatch) {
-        setMd((prev: string) => prev + '\n' + text + '\n');
-        return;
-      }
+      if (!imgMatch) { setMd((prev: string) => prev + '\n' + text + '\n'); return; }
       const [, alt, base64Src] = imgMatch;
       imgRefCounter.current++;
       const refId = `img-${imgRefCounter.current}`;
       const inlineImg = `![${alt || '图片'}][${refId}]`;
-
-      // 🆕 base64 存入独立 map，不写入 md 编辑器
       setImageBase64Map(prev => ({ ...prev, [refId]: base64Src }));
-
       setMd((prev: string) => {
         const ta = textareaRef.current;
         if (!ta) return prev + '\n' + inlineImg;
@@ -408,29 +374,25 @@ export default function App() {
     });
   }, []);
 
-  // ── 提取内联 base64 图片为引用式（返回清理后的 md + base64 map）──
   const extractInlineBase64Images = useCallback((markdown: string): { cleaned: string; map: Record<string, string> } => {
     const inlineBase64Regex = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+)\)/g;
     const map: Record<string, string> = {};
     let counter = 0;
     let cleaned = markdown;
-
     cleaned = cleaned.replace(inlineBase64Regex, (_match, alt: string, dataUri: string) => {
       counter++;
       const refId = `img-${Date.now()}-${counter}`;
       map[refId] = dataUri;
       return `![${alt || '图片'}][${refId}]`;
     });
-
+    if (counter > 0) cleaned = cleaned.trimEnd() + '\n';
     return { cleaned, map };
   }, []);
 
-  // ── MD 文件导入 ──
   const handleMdImport = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
       let content = reader.result as string;
-      // 自动将内联 base64 图片提取为引用式，base64 存入独立 map
       const { cleaned, map } = extractInlineBase64Images(content);
       setMd(cleaned);
       setImageBase64Map(prev => ({ ...prev, ...map }));
@@ -444,7 +406,7 @@ export default function App() {
     if (file) handleMdImport(file);
   }, [handleMdImport]);
 
-  // ── 图片压缩（优化：保留 PNG 透明度）──
+  // ── 图片压缩 ──
   const compressImage = useCallback((file: File, maxKB: number = 500, maxWidth: number = 1920): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -457,23 +419,16 @@ export default function App() {
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0, width, height);
-        
         const hasTransparency = (): boolean => {
           if (file.type !== 'image/png') return false;
           const imageData = ctx.getImageData(0, 0, width, height);
           const data = imageData.data;
-          for (let i = 3; i < data.length; i += 4) {
-            if (data[i] < 255) return true;
-          }
+          for (let i = 3; i < data.length; i += 4) { if (data[i] < 255) return true; }
           return false;
         };
-        
         const preservePNG = hasTransparency();
         if (preservePNG) {
-          canvas.toBlob((blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error('PNG 压缩失败'));
-          }, 'image/png', 0.9);
+          canvas.toBlob((blob) => { if (blob) resolve(blob); else reject(new Error('PNG 压缩失败')); }, 'image/png', 0.9);
         } else {
           const tryCompress = (quality: number) => {
             canvas.toBlob((blob) => {
@@ -490,18 +445,13 @@ export default function App() {
     });
   }, []);
 
-  // ── 图片上传 ──
   const uploadImage = useCallback(async (file: File) => {
     const MAX_BASE64_KB = 400;
     let blob: Blob = file;
-    if (file.size > MAX_BASE64_KB * 1024) {
-      try { blob = await compressImage(file, MAX_BASE64_KB, 1920); } catch {}
-    }
+    if (file.size > MAX_BASE64_KB * 1024) { try { blob = await compressImage(file, MAX_BASE64_KB, 1920); } catch {} }
     if (imageMode === 'base64') {
       const reader = new FileReader();
-      reader.onload = () => {
-        appendMd(`![](${reader.result as string})`, true);
-      };
+      reader.onload = () => { appendMd(`![](${reader.result as string})`, true); };
       reader.readAsDataURL(blob);
     } else {
       if (!githubConfig.token) { setShowGithubConfig(true); return; }
@@ -571,14 +521,9 @@ export default function App() {
     document.addEventListener('mouseup', onUp);
   }, [splitPct]);
 
-  useEffect(() => {
-    try { localStorage.setItem(SPLIT_KEY, String(Math.round(splitPct))); } catch {}
-  }, [splitPct]);
+  useEffect(() => { try { localStorage.setItem(SPLIT_KEY, String(Math.round(splitPct))); } catch {} }, [splitPct]);
 
-  const saveGithubConfig = () => {
-    sessionStorage.setItem('md2wx_github', JSON.stringify(githubConfig));
-    setShowGithubConfig(false);
-  };
+  const saveGithubConfig = () => { sessionStorage.setItem('md2wx_github', JSON.stringify(githubConfig)); setShowGithubConfig(false); };
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY);
@@ -587,7 +532,6 @@ export default function App() {
     setImageBase64Map({});
   };
 
-  // ── 图片排版 ──
   const insertImageLayout = (layout: string) => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -616,168 +560,286 @@ export default function App() {
     { key: 'gallery', label: '画廊', desc: '2-3列网格' },
   ];
 
+  // ─── 行号同步滚动 ────────────────────────────
+  const handleEditorScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
+    if (editorLinesRef.current) {
+      editorLinesRef.current.scrollTop = (e.target as HTMLTextAreaElement).scrollTop;
+    }
+  }, []);
+
+  // ─── 渲染 ────────────────────────────
   return (
-    <div className="h-screen flex flex-col bg-white">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-2 bg-gray-900 text-white border-b border-gray-700 shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold tracking-tight">MD <span className="text-amber-400">→</span> WeChat</h1>
-          <span className="text-xs text-gray-400 hidden sm:inline">v3.3</span>
-          {draftRestored && (
-            <span className="flex items-center gap-1 text-xs">
-              <span className="text-amber-400">📝 草稿已恢复</span>
-              <button onClick={clearDraft} className="text-gray-500 hover:text-gray-300 underline">清除</button>
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <select className="bg-gray-800 text-white text-xs border border-gray-700 rounded px-1.5 py-1" value={spacing} onChange={e => setSpacing(e.target.value as any)} title="段落间距">
-            <option value="compact">紧凑</option>
-            <option value="normal">标准</option>
-            <option value="loose">宽松</option>
-          </select>
-
-          <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
-            <input type="checkbox" checked={autoSpace} onChange={e => setAutoSpace(e.target.checked)} className="w-3 h-3" />间距
-          </label>
-          <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
-            <input type="checkbox" checked={showToc} onChange={e => setShowToc(e.target.checked)} className="w-3 h-3" />TOC
-          </label>
-          <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
-            <input type="checkbox" checked={firstIndent} onChange={e => setFirstIndent(e.target.checked)} className="w-3 h-3" />缩进
-          </label>
-
-          <select className="bg-gray-800 text-white text-xs border border-gray-700 rounded px-2 py-1" value={theme} onChange={e => setTheme(e.target.value as ThemeId)}>
-            {(Object.keys(THEME_META) as ThemeId[]).map(id => <option key={id} value={id}>{THEME_META[id].name}</option>)}
-          </select>
-
-          <div className="flex bg-gray-800 rounded-md p-0.5">
-            <button className={`px-2 py-0.5 text-xs rounded ${mode === 'preview' ? 'bg-gray-600 text-white' : 'text-gray-400'}`} onClick={() => setMode('preview')}>预览</button>
-            <button className={`px-2 py-0.5 text-xs rounded ${mode === 'wechat' ? 'bg-gray-600 text-white' : 'text-gray-400'}`} onClick={() => setMode('wechat')}>公众号</button>
+    <div className={`h-screen flex flex-col ${isDark ? 'dark bg-gray-950' : 'bg-gray-50'} transition-colors`}>
+      {/* ═══ 顶部导航栏 ═══ */}
+      <header className="shrink-0 z-50">
+        {/* 品牌行 */}
+        <div className={`px-4 py-2.5 flex items-center justify-between border-b ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200'} shadow-sm`}>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">📝</span>
+              <h1 className={`text-base font-bold tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                MD <span className="text-brand-500">→</span> WeChat
+              </h1>
+            </div>
+            {draftRestored && (
+              <span className="flex items-center gap-1.5 text-xs">
+                <span className="text-brand-500">📝 草稿已恢复</span>
+                <button onClick={clearDraft} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline">清除</button>
+              </span>
+            )}
           </div>
 
-          <button onClick={() => setFullscreen(!fullscreen)} className={`px-2 py-0.5 text-xs rounded ${fullscreen ? 'bg-amber-500 text-white' : 'text-gray-400 hover:text-white'}`} title="全屏编辑">
-            {fullscreen ? '⊠' : '⛶'}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={toggleDark}
+              className={`p-1.5 rounded-lg transition-colors ${isDark ? 'text-yellow-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}
+              title={isDark ? '切换亮色' : '切换暗色'}
+            >
+              {isDark ? '☀️' : '🌙'}
+            </button>
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className={`p-1.5 rounded-lg transition-colors ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-500 hover:bg-gray-100'}`}
+              title="快捷键"
+            >
+              ⌨️
+            </button>
+            <div className="w-px h-5 bg-gray-300 dark:bg-gray-700 mx-1" />
+            <button onClick={handleCopy} className={`hidden sm:flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all active:scale-[0.98] ${isDark ? 'bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}>
+              {copySuccessHtml ? '✅ 已复制' : '📋 复制HTML'}
+            </button>
+            <button onClick={handleCopyForWechat} className="flex items-center gap-1 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-all shadow-sm hover:shadow active:scale-[0.98]">
+              {copySuccessWechat ? '✅ 已复制' : '📋 复制到公众号'}
+            </button>
+            <button onClick={handleDownload} className={`hidden md:flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all active:scale-[0.98] ${isDark ? 'bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}>
+              ⬇️ 下载
+            </button>
+          </div>
+        </div>
 
-          <button onClick={handleCopy} className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded transition-colors">{copySuccessHtml ? '✅ 已复制' : '复制HTML'}</button>
-          <button onClick={handleCopyForWechat} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors">
-            {copySuccessWechat ? '✅ 已复制' : '复制到公众号'}
-          </button>
-          <button onClick={handleDownload} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded transition-colors">下载</button>
+        {/* 排版设置行 */}
+        <div className={`px-4 py-1.5 flex items-center gap-3 flex-wrap border-b ${isDark ? 'bg-gray-900/80 border-gray-800' : 'bg-gray-50 border-gray-200'} backdrop-blur`}>
+          {/* 主题选择 */}
+          <div className="flex items-center gap-1.5">
+            <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>🎨</span>
+            <select
+              className={`text-xs px-2 py-1 rounded-md border ${isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'bg-white border-gray-200 text-gray-700'} focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none`}
+              value={theme}
+              onChange={e => setTheme(e.target.value as ThemeId)}
+            >
+              {(Object.keys(THEME_META) as ThemeId[]).map(id => (
+                <option key={id} value={id}>{THEME_META[id].name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="w-px h-4 bg-gray-300 dark:bg-gray-700" />
+
+          {/* 段落间距 */}
+          <div className="flex items-center gap-1.5">
+            <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>📏</span>
+            <div className={`flex rounded-md overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+              {(['compact', 'normal', 'loose'] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setSpacing(s)}
+                  className={`px-2 py-0.5 text-xs transition-colors ${
+                    spacing === s
+                      ? 'bg-brand-500 text-white'
+                      : isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {s === 'compact' ? '紧凑' : s === 'normal' ? '标准' : '宽松'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="w-px h-4 bg-gray-300 dark:bg-gray-700" />
+
+          {/* 排版选项 */}
+          <label className={`flex items-center gap-1 text-xs cursor-pointer ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+            <input type="checkbox" checked={autoSpace} onChange={e => setAutoSpace(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+            间距
+          </label>
+          <label className={`flex items-center gap-1 text-xs cursor-pointer ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+            <input type="checkbox" checked={showToc} onChange={e => setShowToc(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+            目录
+          </label>
+          <label className={`flex items-center gap-1 text-xs cursor-pointer ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+            <input type="checkbox" checked={firstIndent} onChange={e => setFirstIndent(e.target.checked)} className="w-3.5 h-3.5 rounded border-gray-300 text-brand-500 focus:ring-brand-500" />
+            缩进
+          </label>
+
+          <div className="flex-1" />
+
+          {/* 预览模式切换 */}
+          <div className={`flex rounded-md overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+            <button
+              onClick={() => setMode('preview')}
+              className={`px-2.5 py-0.5 text-xs transition-colors ${mode === 'preview' ? 'bg-brand-500 text-white' : isDark ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-600'}`}
+            >
+              预览
+            </button>
+            <button
+              onClick={() => setMode('wechat')}
+              className={`px-2.5 py-0.5 text-xs transition-colors ${mode === 'wechat' ? 'bg-brand-500 text-white' : isDark ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-600'}`}
+            >
+              公众号
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main */}
+      {/* ═══ 主体区域 ═══ */}
       <div className="flex flex-1 overflow-hidden" ref={splitRef}>
-        {/* Editor */}
+        {/* ─── 编辑器 ─── */}
         <div
-          className={`flex flex-col border-r border-gray-200 bg-white relative ${fullscreen ? '' : ''} ${dragOver ? 'ring-2 ring-amber-400 ring-inset' : ''}`}
-          style={{ width: fullscreen ? '100%' : `${splitPct}%` }}
+          className={`flex flex-col relative ${isDark ? 'bg-gray-950' : 'bg-white'} ${dragOver ? 'ring-2 ring-brand-400 ring-inset' : ''}`}
+          style={{ width: `${splitPct}%` }}
           onDragOver={e => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
         >
-          {/* 编辑区顶栏 */}
-          <div className="px-3 py-1 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between items-center shrink-0">
-            <span className="flex items-center gap-2">
-              <span>Markdown</span>
-              {importedFileName && <span className="text-amber-600 font-medium">📄 {importedFileName}</span>}
-            </span>
-            <span className="flex gap-2 items-center">
-              <span>字:{wordCount.total} | ~{readingTime}min | H:{tocItems.length}</span>
-              <button onClick={() => setShowImageToolbar(!showImageToolbar)} className="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded-md transition-colors" title="图片排版">🖼️</button>
-              <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 active:bg-amber-700 rounded-md shadow-sm hover:shadow transition-all" title="导入 Markdown 文件">
-                <span>📄</span>
-                <span>导入 MD</span>
-              </button>
-            </span>
-          </div>
-
-          {/* Markdown 工具栏 */}
-          <div className="px-2 py-1 bg-gray-100 border-b border-gray-200 flex gap-0.5 flex-wrap shrink-0">
+          {/* 工具栏 */}
+          <div className={`px-2 py-1.5 flex items-center gap-0.5 flex-wrap shrink-0 border-b ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
             {TOOLBAR_ITEMS.map(item => item.key.startsWith('divider')
-              ? <span key={item.key} className="w-px bg-gray-300 mx-1" />
-              : <button key={item.key} onClick={() => handleToolbar(item)}
-                  className="px-1.5 py-0.5 text-xs hover:bg-gray-200 rounded transition-colors text-gray-600"
-                  title={item.title}>{item.label}</button>
+              ? <span key={item.key} className="w-px h-5 bg-gray-300 dark:bg-gray-700 mx-0.5" />
+              : <button
+                  key={item.key}
+                  onClick={() => handleToolbar(item)}
+                  className={`px-2 py-1 text-xs rounded-md transition-all ${
+                    isDark
+                      ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                  } active:scale-95`}
+                  title={item.title}
+                >
+                  {item.label}
+                </button>
             )}
+            <div className="flex-1" />
+            <button
+              onClick={() => setShowImageToolbar(!showImageToolbar)}
+              className={`px-2 py-1 text-xs rounded-md transition-colors ${showImageToolbar ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400' : isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-200'}`}
+            >
+              🖼️ 排版
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-2 py-1 text-xs rounded-md bg-brand-500 hover:bg-brand-600 text-white transition-colors active:scale-95"
+            >
+              📄 导入
+            </button>
           </div>
 
           {/* 图片排版工具栏 */}
           {showImageToolbar && (
-            <div className="px-3 py-1.5 bg-gray-100 border-b border-gray-200 flex gap-1.5 flex-wrap shrink-0">
+            <div className={`px-3 py-1.5 flex gap-1.5 flex-wrap shrink-0 border-b ${isDark ? 'bg-gray-900/80 border-gray-800' : 'bg-amber-50/80 border-amber-100'} backdrop-blur`}>
               {imgLayouts.map(l => (
                 <button key={l.key} onClick={() => insertImageLayout(l.key)}
-                  className="px-2 py-0.5 text-xs bg-white border border-gray-300 hover:bg-amber-50 hover:border-amber-400 rounded transition-colors"
-                  title={l.desc}>{l.label}</button>
+                  className={`px-2 py-0.5 text-xs rounded-md border transition-all active:scale-95 ${
+                    isDark
+                      ? 'bg-gray-800 border-gray-700 text-gray-300 hover:border-brand-500'
+                      : 'bg-white border-gray-200 text-gray-700 hover:border-brand-400 hover:bg-brand-50'
+                  }`}
+                  title={l.desc}
+                >
+                  {l.label}
+                </button>
               ))}
-              <button onClick={() => setShowImageToolbar(false)} className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-gray-600 ml-auto">✕</button>
+              <button onClick={() => setShowImageToolbar(false)} className="ml-auto text-gray-400 hover:text-gray-600 text-xs px-1">✕</button>
             </div>
           )}
 
+          {/* 拖拽提示 */}
           {dragOver && (
-            <div className="absolute inset-0 bg-amber-50/80 flex items-center justify-center z-10 pointer-events-none">
-              <div className="text-amber-600 font-medium text-lg">松开上传图片 / 导入 MD</div>
+            <div className="absolute inset-0 bg-brand-500/10 flex items-center justify-center z-20 pointer-events-none backdrop-blur-sm">
+              <div className="bg-white dark:bg-gray-900 px-6 py-4 rounded-xl shadow-xl border border-brand-200 dark:border-brand-800">
+                <div className="text-brand-600 dark:text-brand-400 font-medium text-lg text-center">📎 松开上传图片 / 导入 MD</div>
+              </div>
             </div>
           )}
 
-          {/* 图床模式 */}
-          <div className="px-3 py-1 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex items-center gap-2 shrink-0">
-            <span>图床:</span>
-            <button onClick={() => setImageMode('base64')} className={`px-1.5 py-0.5 rounded transition-colors ${imageMode === 'base64' ? 'bg-amber-100 text-amber-700 font-medium' : 'hover:bg-gray-200 text-gray-400'}`}>Base64</button>
-            <button onClick={() => setImageMode('github')} className={`px-1.5 py-0.5 rounded transition-colors ${imageMode === 'github' ? 'bg-amber-100 text-amber-700 font-medium' : 'hover:bg-gray-200 text-gray-400'}`}>GitHub</button>
+          {/* 图床设置 */}
+          <div className={`px-3 py-1 flex items-center gap-2 shrink-0 border-b ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+            <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>图床</span>
+            <div className={`flex rounded-md overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+              <button onClick={() => setImageMode('base64')} className={`px-2 py-0.5 text-xs transition-colors ${imageMode === 'base64' ? 'bg-brand-500 text-white' : isDark ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-600'}`}>Base64</button>
+              <button onClick={() => setImageMode('github')} className={`px-2 py-0.5 text-xs transition-colors ${imageMode === 'github' ? 'bg-brand-500 text-white' : isDark ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-600'}`}>GitHub</button>
+            </div>
             {imageMode === 'github' && !githubConfig.token && (
-              <button onClick={() => setShowGithubConfig(true)} className="text-amber-600 hover:underline">⚙️ Token</button>
+              <button onClick={() => setShowGithubConfig(true)} className="text-xs text-brand-500 hover:underline">⚙️ 配置 Token</button>
             )}
-            {imageMode === 'github' && githubConfig.token && <span className="text-green-600 text-xs">✅</span>}
+            {imageMode === 'github' && githubConfig.token && <span className="text-green-500 text-xs">✅ 已配置</span>}
+            <div className="flex-1" />
+            {importedFileName && (
+              <span className={`text-xs text-brand-500 truncate max-w-[120px] ${isDark ? 'text-brand-400' : ''}`} title={importedFileName}>
+                📄 {importedFileName}
+              </span>
+            )}
+            <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+              {wordCount.total} 字 · ~{readingTime} 分钟 · H{_tocCount}
+            </span>
           </div>
 
           <input ref={fileInputRef} type="file" accept=".md,.markdown,.txt" onChange={handleFileInputChange} className="hidden" />
-          <textarea ref={textareaRef}
-            className="flex-1 w-full p-4 resize-none focus:outline-none font-mono text-sm leading-relaxed text-gray-700"
-            value={md} onChange={e => setMd(e.target.value)} onPaste={handlePaste} spellCheck={false}
-            placeholder="在此输入 Markdown...&#10;Ctrl+V 粘贴截图 | 拖拽上传/导入MD | Ctrl+S 下载"
-          />
 
-          {/* 🆕 内嵌图片折叠面板 */}
+          {/* 编辑器主体（带行号） */}
+          <div className="flex flex-1 overflow-hidden relative">
+            {/* 行号 */}
+            <div
+              ref={editorLinesRef}
+              className={`shrink-0 w-12 py-4 overflow-hidden ${isDark ? 'bg-gray-900 text-gray-600' : 'bg-gray-50 text-gray-300'} font-mono text-sm text-right select-none`}
+            >
+              {Array.from({ length: editorLineCount }, (_, i) => (
+                <div key={i} className="h-6 leading-6 pr-2">{i + 1}</div>
+              ))}
+            </div>
+            <textarea
+              ref={textareaRef}
+              className={`flex-1 py-4 px-3 resize-none font-mono text-sm leading-6 focus:outline-none ${
+                isDark ? 'bg-gray-950 text-gray-200 placeholder-gray-600' : 'bg-white text-gray-800 placeholder-gray-400'
+              }`}
+              value={md}
+              onChange={e => setMd(e.target.value)}
+              onPaste={handlePaste}
+              onScroll={handleEditorScroll}
+              spellCheck={false}
+              placeholder="在此输入 Markdown...&#10;Ctrl+V 粘贴截图 | 拖拽上传/导入MD | Ctrl+S 下载"
+            />
+          </div>
+
+          {/* 图片面板 */}
           {imageRefs.length > 0 && (
-            <div className="shrink-0 border-t border-gray-200 bg-gray-50">
+            <div className={`shrink-0 border-t ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
               <button
                 onClick={() => setShowImagePanel(p => !p)}
-                className="w-full px-3 py-1.5 text-xs text-gray-600 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                className={`w-full px-3 py-1.5 text-xs flex items-center justify-between transition-colors ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}
               >
                 <span className="flex items-center gap-1.5">
-                  📎 内嵌图片 ({imageRefs.length})
+                  📎 内嵌图片 ({imageRefs.length}张)
                 </span>
-                <span>{showImagePanel ? '▲' : '▼'}</span>
+                <span className="transition-transform">{showImagePanel ? '▲' : '▼'}</span>
               </button>
               {showImagePanel && (
                 <div className="max-h-48 overflow-y-auto px-3 py-2 space-y-2">
                   {imageRefs.map(ref => (
-                    <div key={ref.id} className="flex items-center gap-2 text-xs">
-                      <img src={ref.url} alt={ref.alt} className="w-10 h-10 object-cover rounded border border-gray-200 shrink-0" />
+                    <div key={ref.id} className="flex items-center gap-2 text-xs group">
+                      <img src={ref.url} alt={ref.alt} className="w-10 h-10 object-cover rounded-lg border border-gray-200 dark:border-gray-700 shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-700 truncate">[{ref.id}] {ref.alt}</div>
-                        <div className="text-gray-400">{ref.sizeKB} KB · Base64</div>
+                        <div className={`font-medium truncate ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>[{ref.id}]</div>
+                        <div className="text-gray-400">{ref.sizeKB} KB</div>
                       </div>
                       <button
                         onClick={() => {
-                          // 🆕 删除引用标记 + 从 map 中移除
                           setMd((prev: string) => {
-                            let cleaned = prev
-                              .replace(new RegExp(`!\\[([^\\]]*)\\]\\[${ref.id}\\]\\n?`, 'g'), '');
-                            cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+                            let cleaned = prev.replace(new RegExp(`!\\[([^\\]]*)\\]\\[${ref.id}\\]\\n?`, 'g'), '').replace(/\n{3,}/g, '\n\n');
                             return cleaned;
                           });
-                          setImageBase64Map(prev => {
-                            const next = { ...prev };
-                            delete next[ref.id];
-                            return next;
-                          });
+                          setImageBase64Map(prev => { const next = { ...prev }; delete next[ref.id]; return next; });
                         }}
-                        className="text-red-400 hover:text-red-600 px-1 shrink-0"
+                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-500 px-1.5 py-0.5 rounded transition-all"
                         title="删除"
                       >🗑</button>
                     </div>
@@ -788,46 +850,113 @@ export default function App() {
           )}
         </div>
 
-        {/* 分屏拖拽手柄 */}
-        {!fullscreen && (
-          <div
-            onMouseDown={handleSplitMouseDown}
-            className="w-2 bg-gray-200 hover:bg-amber-400 cursor-col-resize shrink-0 transition-colors flex items-center justify-center"
-            title="拖拽调整分屏"
-          >
-            <div className="w-0.5 h-8 bg-gray-400 rounded" />
-          </div>
-        )}
+        {/* ─── 分屏拖拽手柄 ─── */}
+        <div
+          onMouseDown={handleSplitMouseDown}
+          className={`w-3 shrink-0 cursor-col-resize transition-colors flex items-center justify-center group ${isDark ? 'bg-gray-800 hover:bg-brand-600' : 'bg-gray-200 hover:bg-brand-400'}`}
+        >
+          <div className={`w-0.5 h-8 rounded-full transition-colors ${isDark ? 'bg-gray-600 group-hover:bg-white' : 'bg-gray-400 group-hover:bg-white'}`} />
+        </div>
 
-        {/* Preview */}
-        {!fullscreen && (
-          <div className="flex flex-col bg-gray-100" style={{ width: `${100 - splitPct}%` }}>
-            <div className="px-3 py-1 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between items-center shrink-0">
-              <span>{mode === 'preview' ? '实时预览' : '公众号适配（外链转脚注/字号统一）'}</span>
-              <span className="text-gray-400">{THEME_META[theme]?.name}</span>
+        {/* ─── 预览区域 ─── */}
+          <div className={`flex flex-col ${isDark ? 'bg-gray-950' : 'bg-gray-100'}`} style={{ width: `${100 - splitPct}%` }}>
+            {/* 预览工具栏 */}
+            <div className={`px-3 py-1.5 flex items-center justify-between shrink-0 border-b ${isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                  {mode === 'preview' ? '👁️ 实时预览' : '📱 公众号适配'}
+                </span>
+                <div className={`flex rounded-md overflow-hidden border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <button
+                    onClick={() => setPreviewMode('desktop')}
+                    className={`px-2 py-0.5 text-xs transition-colors ${previewMode === 'desktop' ? 'bg-brand-500 text-white' : isDark ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-600'}`}
+                    title="桌面预览"
+                  >
+                    🖥️
+                  </button>
+                  <button
+                    onClick={() => setPreviewMode('mobile')}
+                    className={`px-2 py-0.5 text-xs transition-colors ${previewMode === 'mobile' ? 'bg-brand-500 text-white' : isDark ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-600'}`}
+                    title="手机预览 (375px)"
+                  >
+                    📱
+                  </button>
+                </div>
+              </div>
+              <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{THEME_META[theme]?.name}</span>
             </div>
-            <div className="flex-1 overflow-hidden bg-white">
-              <iframe ref={previewRef} className="w-full h-full border-0" title="preview" />
+
+            {/* 预览内容 */}
+            <div className="flex-1 overflow-hidden flex items-start justify-center p-4">
+              {previewMode === 'mobile' ? (
+                <div className="relative">
+                  {/* 手机外壳 */}
+                  <div className={`w-[375px] h-[720px] rounded-[40px] p-2 shadow-2xl ${isDark ? 'bg-gray-800' : 'bg-gray-800'}`}>
+                    <div className={`w-full h-full rounded-[32px] overflow-hidden ${isDark ? 'bg-gray-950' : 'bg-white'}`}>
+                      <iframe ref={previewRef} className="w-full h-full border-0" title="preview" />
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className={`w-full h-full rounded-xl overflow-hidden shadow-sm ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
+                  <iframe ref={previewRef} className="w-full h-full border-0" title="preview" />
+                </div>
+              )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* GitHub Config Modal */}
+      {/* ═══ GitHub 配置弹窗 ═══ */}
       {showGithubConfig && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
-            <h3 className="text-lg font-bold mb-4">GitHub 图床配置</h3>
-            <input className="w-full border border-gray-300 rounded px-3 py-2 mb-3 text-sm" placeholder="Personal Access Token" type="password"
-              value={githubConfig.token} onChange={e => setGithubConfig(prev => ({ ...prev, token: e.target.value }))} />
-            <input className="w-full border border-gray-300 rounded px-3 py-2 mb-3 text-sm" placeholder="仓库 (user/repo)"
-              value={githubConfig.repo} onChange={e => setGithubConfig(prev => ({ ...prev, repo: e.target.value }))} />
-            <input className="w-full border border-gray-300 rounded px-3 py-2 mb-4 text-sm" placeholder="分支 (main)"
-              value={githubConfig.branch} onChange={e => setGithubConfig(prev => ({ ...prev, branch: e.target.value }))} />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className={`rounded-xl p-6 w-96 shadow-2xl ${isDark ? 'bg-gray-900 border border-gray-700' : 'bg-white'}`}>
+            <h3 className={`text-lg font-bold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>GitHub 图床配置</h3>
+            <input
+              className={`w-full border rounded-lg px-3 py-2 mb-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors ${isDark ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900'}`}
+              placeholder="Personal Access Token"
+              type="password"
+              value={githubConfig.token}
+              onChange={e => setGithubConfig(prev => ({ ...prev, token: e.target.value }))}
+            />
+            <input
+              className={`w-full border rounded-lg px-3 py-2 mb-3 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors ${isDark ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900'}`}
+              placeholder="仓库 (user/repo)"
+              value={githubConfig.repo}
+              onChange={e => setGithubConfig(prev => ({ ...prev, repo: e.target.value }))}
+            />
+            <input
+              className={`w-full border rounded-lg px-3 py-2 mb-4 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-colors ${isDark ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900'}`}
+              placeholder="分支 (main)"
+              value={githubConfig.branch}
+              onChange={e => setGithubConfig(prev => ({ ...prev, branch: e.target.value }))}
+            />
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowGithubConfig(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">取消</button>
-              <button onClick={saveGithubConfig} className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded">保存</button>
+              <button onClick={() => setShowGithubConfig(false)} className={`px-4 py-2 text-sm rounded-lg transition-colors ${isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100'}`}>取消</button>
+              <button onClick={saveGithubConfig} className="px-4 py-2 text-sm bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors">保存</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ 快捷键帮助 ═══ */}
+      {showShortcuts && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}>
+          <div className={`rounded-xl p-6 w-80 shadow-2xl ${isDark ? 'bg-gray-900 border border-gray-700' : 'bg-white'}`} onClick={e => e.stopPropagation()}>
+            <h3 className={`text-lg font-bold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>⌨️ 快捷键</h3>
+            <div className="space-y-2 text-sm">
+              {[
+                ['Ctrl + S', '下载 HTML'],
+                ['Ctrl + B', '粗体'],
+                ['Ctrl + I', '斜体'],
+                ['Ctrl + K', '链接'],
+              ].map(([key, desc]) => (
+                <div key={key} className="flex justify-between items-center">
+                  <span className={isDark ? 'text-gray-400' : 'text-gray-600'}>{desc}</span>
+                  <kbd className={`px-2 py-0.5 rounded text-xs font-mono ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}>{key}</kbd>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setShowShortcuts(false)} className="mt-4 w-full py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg transition-colors">知道了</button>
           </div>
         </div>
       )}
