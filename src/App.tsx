@@ -1,6 +1,6 @@
 /**
- * App.tsx — MD to WeChat 公众号排版编辑器 v3.2
- * 新增：自动保存草稿、Markdown工具栏、分屏拖拽、全屏编辑、段落间距
+ * App.tsx — MD to WeChat 公众号排版编辑器 v3.3
+ * 新增：base64 图片引用定义分离存储，编辑器只显示简短引用标记
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -92,20 +92,47 @@ const TOOLBAR_ITEMS: ToolbarAction[] = [
   { key: 'hr', label: '—', title: '分割线', prefix: '\n---\n', suffix: '', block: true },
 ];
 
+// ─── 图片引用信息 ────────────────────────────
+interface ImageRef {
+  id: string;
+  alt: string;
+  url: string;
+  sizeKB: number;
+}
+
+// 将 Markdown 与 base64 图片映射合并为完整 Markdown
+function mergeBase64Refs(markdown: string, base64Map: Record<string, string>): string {
+  if (!base64Map || Object.keys(base64Map).length === 0) return markdown;
+  const refs = Object.entries(base64Map)
+    .map(([id, url]) => `[${id}]: ${url}`)
+    .join('\n');
+  return markdown.trimEnd() + '\n\n' + refs + '\n';
+}
+
 export default function App() {
   // ── 状态 ──
   const [md, setMd] = useState(() => {
-    // 恢复草稿
     try {
       const draft = localStorage.getItem(DRAFT_KEY);
       if (draft) {
         const parsed = JSON.parse(draft);
-        // 恢复主题
         return parsed.md || DEFAULT_MD;
       }
     } catch {}
     return DEFAULT_MD;
   });
+
+  // 🆕 新增：base64 图片引用定义独立存储，编辑器不显示
+  const [imageBase64Map, setImageBase64Map] = useState<Record<string, string>>(() => {
+    try {
+      const draft = localStorage.getItem(DRAFT_KEY);
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        return parsed.imageBase64Map || {};
+      }
+    } catch { return {}; }
+  });
+
   const [theme, setTheme] = useState<ThemeId>(() => {
     try { const d = localStorage.getItem(DRAFT_KEY); return d ? JSON.parse(d).theme || 'default' : 'default'; } catch { return 'default'; }
   });
@@ -127,7 +154,7 @@ export default function App() {
   const [splitPct, setSplitPct] = useState(() => {
     try { const v = localStorage.getItem(SPLIT_KEY); return v ? parseInt(v) : 50; } catch { return 50; }
   });
-  const [githubConfig, setGitHubConfig] = useState<GitHubConfig>(() => {
+  const [githubConfig, setGithubConfig] = useState<GitHubConfig>(() => {
     try {
       const saved = sessionStorage.getItem('md2wx_github');
       return saved ? JSON.parse(saved) : { token: '', repo: '', branch: 'main' };
@@ -142,29 +169,26 @@ export default function App() {
   const splitRef = useRef<HTMLDivElement>(null);
   const imgRefCounter = useRef(0);
 
-  // ── 提取内嵌 base64 图片引用 ──
-  interface ImageRef {
-    id: string;
-    alt: string;
-    url: string;
-    sizeKB: number;
-  }
-  const extractImageRefs = useCallback((markdown: string): ImageRef[] => {
+  // ── 从 imageBase64Map 提取图片引用信息 ──
+  const extractImageRefs = useCallback((markdown: string, base64Map: Record<string, string>): ImageRef[] => {
     const refs: ImageRef[] = [];
-    const refDefRegex = /^\[([^\]]+)\]:\s+(data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+)$/gm;
+    // 匹配引用式图片标记 ![alt][id]
+    const refMarkRegex = /!\[([^\]]*)\]\[([^\]]+)\]/g;
     let match;
-    while ((match = refDefRegex.exec(markdown)) !== null) {
-      const id = match[1];
-      const url = match[2];
-      const altMatch = markdown.match(new RegExp(`!\\[([^\\]]*)\\]\\[${id}\\]`));
-      const alt = altMatch ? altMatch[1] : '图片';
-      const base64Part = url.split(',')[1];
-      const sizeKB = base64Part ? Math.round((base64Part.length * 0.75) / 1024) : 0;
-      refs.push({ id, alt, url, sizeKB });
+    while ((match = refMarkRegex.exec(markdown)) !== null) {
+      const alt = match[1];
+      const id = match[2];
+      const url = base64Map[id];
+      if (url && url.startsWith('data:image/')) {
+        const base64Part = url.split(',')[1];
+        const sizeKB = base64Part ? Math.round((base64Part.length * 0.75) / 1024) : 0;
+        refs.push({ id, alt, url, sizeKB });
+      }
     }
     return refs;
   }, []);
-  const imageRefs = useMemo(() => extractImageRefs(md), [md, extractImageRefs]);
+
+  const imageRefs = useMemo(() => extractImageRefs(md, imageBase64Map), [md, imageBase64Map, extractImageRefs]);
 
   const wordCount = useMemo(() => countWords(md), [md]);
   const readingTime = useMemo(() => estimateReadingTime(md), [md]);
@@ -175,37 +199,36 @@ export default function App() {
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ md, theme })); } catch {}
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ md, theme, imageBase64Map })); } catch {}
     }, 1000);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [md, theme]);
+  }, [md, theme, imageBase64Map]);
 
   // ── 渲染 HTML ──
   const renderHtml = useCallback((inputMd: string, inputTheme: ThemeId, inputMode: 'preview' | 'wechat') => {
+    // 🆕 合并 base64 引用定义后再渲染
+    const fullMd = mergeBase64Refs(inputMd, imageBase64Map);
+
     const css = THEME_CSS[inputTheme] || THEME_CSS.default;
     let extraCss = '';
     if (firstIndent) extraCss += `#nice p.nice-indent, #nice p { text-indent:2em; }`;
-    // 段落间距
     const spacingMap = { compact: '6px', normal: '12px', loose: '20px' };
     extraCss += `#nice p { margin-top:${spacingMap[spacing]} !important; margin-bottom:${spacingMap[spacing]} !important; }`;
-    // 公众号模式统一字号
     if (inputMode === 'wechat') {
       extraCss += `#nice, #nice p, #nice li, #nice td, #nice th { font-size:15px !important; }`;
     }
 
-    let bodyHtml = parseMarkdown(inputMd, { autoSpace, showToc, firstIndent });
+    let bodyHtml = parseMarkdown(fullMd, { autoSpace, showToc, firstIndent });
     if (inputMode === 'wechat') bodyHtml = adaptForWechat(bodyHtml);
 
     const wrapped = `<div id="nice">${bodyHtml}</div>`;
-
     const prismCSS = PRISM_CSS(inputTheme === 'dark');
 
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;">${wrapped}</body></html>`;
-  }, [autoSpace, showToc, firstIndent, spacing]);
+  }, [autoSpace, showToc, firstIndent, spacing, imageBase64Map]);
 
   // ── iframe 预览优化：分离样式初始化和内容更新 ──
-  // 初始化 iframe 样式（theme 变化时重建）
   useEffect(() => {
     const iframe = previewRef.current;
     if (!iframe) return;
@@ -213,23 +236,24 @@ export default function App() {
     if (!doc) return;
     const css = THEME_CSS[theme] || THEME_CSS.default;
     const prismCSS = PRISM_CSS(theme === 'dark');
-    // 额外 CSS：段落间距、缩进等
     let extraCss = '';
-    if (firstIndent) extraCss += `#nice p.nice-indent, #nice p { text-indent:2em; }`;    const spacingMap = { compact: '6px', normal: '12px', loose: '20px' };
+    if (firstIndent) extraCss += `#nice p.nice-indent, #nice p { text-indent:2em; }`;
+    const spacingMap = { compact: '6px', normal: '12px', loose: '20px' };
     extraCss += `#nice p { margin-top:${spacingMap[spacing]} !important; margin-bottom:${spacingMap[spacing]} !important; }`;
-    if (mode === 'wechat') extraCss += `#nice, #nice p, #nice li, #nice td, #nice th { font-size:15px !important; }`;    doc.open();
+    if (mode === 'wechat') extraCss += `#nice, #nice p, #nice li, #nice td, #nice th { font-size:15px !important; }`;
+    doc.open();
     doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;"></body></html>`);
     doc.close();
   }, [theme, spacing, firstIndent, mode]);
 
-  // 内容变化时只更新 body（避免重建 iframe，优化性能）
   useEffect(() => {
     const doc = previewRef.current?.contentDocument;
     if (!doc || !doc.body) return;
-    const bodyHtml = parseMarkdown(md, { autoSpace, showToc, firstIndent });
+    const fullMd = mergeBase64Refs(md, imageBase64Map);
+    const bodyHtml = parseMarkdown(fullMd, { autoSpace, showToc, firstIndent });
     const adapted = mode === 'wechat' ? adaptForWechat(bodyHtml) : bodyHtml;
     doc.body.innerHTML = `<div id="nice">${adapted}</div>`;
-  }, [md, autoSpace, showToc, firstIndent, mode]);
+  }, [md, autoSpace, showToc, firstIndent, mode, imageBase64Map]);
 
   // ── 复制 ──
   const handleCopyForWechat = useCallback(async () => {
@@ -273,7 +297,6 @@ export default function App() {
     const sel = text.substring(start, end);
 
     if (block) {
-      // 块级元素：整行或选中内容前插入前缀
       const lineStart = text.lastIndexOf('\n', start - 1) + 1;
       const beforeLine = text.slice(0, lineStart);
       const afterLine = text.slice(lineStart);
@@ -316,10 +339,8 @@ export default function App() {
   // ── 追加 Markdown ──
   const appendMd = useCallback((text: string, isBase64Image = false) => {
     if (isBase64Image) {
-      // 从 text 中搜索 ![alt](url) 格式的图片（可能前面有压缩提示等前缀）
       const imgMatch = text.match(/!\[([^\]]*)\]\(([^)]+)\)/);
       if (!imgMatch) {
-        // fallback：当做普通文本
         setMd((prev: string) => prev + '\n' + text + '\n');
         return;
       }
@@ -327,13 +348,16 @@ export default function App() {
       imgRefCounter.current++;
       const refId = `img-${imgRefCounter.current}`;
       const inlineImg = `![${alt || '图片'}][${refId}]`;
-      const refDef = `\n[${refId}]: ${base64Src}`;
+
+      // 🆕 base64 存入独立 map，不写入 md 编辑器
+      setImageBase64Map(prev => ({ ...prev, [refId]: base64Src }));
+
       setMd((prev: string) => {
         const ta = textareaRef.current;
-        if (!ta) return prev + '\n' + inlineImg + refDef;
+        if (!ta) return prev + '\n' + inlineImg;
         const start = ta.selectionStart, end = ta.selectionEnd;
         const before = prev.slice(0, start), after = prev.slice(end);
-        const newText = before + (before && !before.endsWith('\n') ? '\n' : '') + inlineImg + refDef + '\n' + after;
+        const newText = before + (before && !before.endsWith('\n') ? '\n' : '') + inlineImg + '\n' + after;
         setTimeout(() => { ta.focus(); ta.setSelectionRange(start + inlineImg.length + 1, start + inlineImg.length + 1); }, 0);
         return newText;
       });
@@ -350,27 +374,21 @@ export default function App() {
     });
   }, []);
 
-  // ── 提取内联 base64 图片为引用式链接（净化编辑器视图）──
-  const extractInlineBase64Images = useCallback((markdown: string): string => {
-    // 匹配 ![alt](data:image/xxx;base64,...) 内联图片
+  // ── 提取内联 base64 图片为引用式（返回清理后的 md + base64 map）──
+  const extractInlineBase64Images = useCallback((markdown: string): { cleaned: string; map: Record<string, string> } => {
     const inlineBase64Regex = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+)\)/g;
-    const refs: string[] = [];
+    const map: Record<string, string> = {};
     let counter = 0;
     let cleaned = markdown;
 
     cleaned = cleaned.replace(inlineBase64Regex, (_match, alt: string, dataUri: string) => {
       counter++;
       const refId = `img-${Date.now()}-${counter}`;
-      refs.push(`[${refId}]: ${dataUri}`);
+      map[refId] = dataUri;
       return `![${alt || '图片'}][${refId}]`;
     });
 
-    if (refs.length > 0) {
-      // 确保文末有空行再追加引用定义
-      cleaned = cleaned.trimEnd() + '\n\n' + refs.join('\n') + '\n';
-    }
-
-    return cleaned;
+    return { cleaned, map };
   }, []);
 
   // ── MD 文件导入 ──
@@ -378,9 +396,10 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = () => {
       let content = reader.result as string;
-      // 自动将内联 base64 图片提取为引用式链接，避免污染编辑器正文
-      content = extractInlineBase64Images(content);
-      setMd(content);
+      // 自动将内联 base64 图片提取为引用式，base64 存入独立 map
+      const { cleaned, map } = extractInlineBase64Images(content);
+      setMd(cleaned);
+      setImageBase64Map(prev => ({ ...prev, ...map }));
       setImportedFileName(file.name);
     };
     reader.readAsText(file, 'UTF-8');
@@ -390,6 +409,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (file) handleMdImport(file);
   }, [handleMdImport]);
+
   // ── 图片压缩（优化：保留 PNG 透明度）──
   const compressImage = useCallback((file: File, maxKB: number = 500, maxWidth: number = 1920): Promise<Blob> => {
     return new Promise((resolve, reject) => {
@@ -404,7 +424,6 @@ export default function App() {
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0, width, height);
         
-        // 检测是否有透明像素
         const hasTransparency = (): boolean => {
           if (file.type !== 'image/png') return false;
           const imageData = ctx.getImageData(0, 0, width, height);
@@ -417,13 +436,11 @@ export default function App() {
         
         const preservePNG = hasTransparency();
         if (preservePNG) {
-          // PNG 有透明像素 → 使用 PNG 格式保留透明度
           canvas.toBlob((blob) => {
             if (blob) resolve(blob);
             else reject(new Error('PNG 压缩失败'));
           }, 'image/png', 0.9);
         } else {
-          // 无透明像素 → JPEG 压缩（更高效）
           const tryCompress = (quality: number) => {
             canvas.toBlob((blob) => {
               if (!blob) { reject(new Error('压缩失败')); return; }
@@ -449,9 +466,11 @@ export default function App() {
     if (imageMode === 'base64') {
       const reader = new FileReader();
       reader.onload = () => {
-        appendMd(`![](${reader.result as string})`, true);  // alt 为空，避免显示图注
+        appendMd(`![](${reader.result as string})`, true);
       };
       reader.readAsDataURL(blob);
+    } else {
+      if (!githubConfig.token) { setShowGithubConfig(true); return; }
       try {
         const { token, repo, branch } = githubConfig;
         const fileName = `${Date.now()}-${file.name.replace(/\.[^.]+$/, '.jpg')}`;
@@ -463,7 +482,7 @@ export default function App() {
             method: 'PUT', headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: `Upload ${file.name}`, content: base64Content, branch }),
           });
-          if (res.ok) appendMd(`![](${GITHUB_CDN_BASE}${fileName})`);  // alt 为空，避免显示图注
+          if (res.ok) appendMd(`![](${GITHUB_CDN_BASE}${fileName})`);
           else { const err = await res.json(); alert(`GitHub 上传失败: ${err.message}`); }
         };
         base64Reader.readAsDataURL(blob);
@@ -518,7 +537,6 @@ export default function App() {
     document.addEventListener('mouseup', onUp);
   }, [splitPct]);
 
-  // 保存分屏比例
   useEffect(() => {
     try { localStorage.setItem(SPLIT_KEY, String(Math.round(splitPct))); } catch {}
   }, [splitPct]);
@@ -532,6 +550,7 @@ export default function App() {
     localStorage.removeItem(DRAFT_KEY);
     setDraftRestored(false);
     setMd(DEFAULT_MD);
+    setImageBase64Map({});
   };
 
   // ── 图片排版 ──
@@ -569,7 +588,7 @@ export default function App() {
       <header className="flex items-center justify-between px-4 py-2 bg-gray-900 text-white border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold tracking-tight">MD <span className="text-amber-400">→</span> WeChat</h1>
-          <span className="text-xs text-gray-400 hidden sm:inline">v3.2</span>
+          <span className="text-xs text-gray-400 hidden sm:inline">v3.3</span>
           {draftRestored && (
             <span className="flex items-center gap-1 text-xs">
               <span className="text-amber-400">📝 草稿已恢复</span>
@@ -579,7 +598,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* 段落间距 */}
           <select className="bg-gray-800 text-white text-xs border border-gray-700 rounded px-1.5 py-1" value={spacing} onChange={e => setSpacing(e.target.value as any)} title="段落间距">
             <option value="compact">紧凑</option>
             <option value="normal">标准</option>
@@ -689,7 +707,7 @@ export default function App() {
             placeholder="在此输入 Markdown...&#10;Ctrl+V 粘贴截图 | 拖拽上传/导入MD | Ctrl+S 下载"
           />
 
-          {/* 内嵌图片折叠面板 */}
+          {/* 🆕 内嵌图片折叠面板 */}
           {imageRefs.length > 0 && (
             <div className="shrink-0 border-t border-gray-200 bg-gray-50">
               <button
@@ -712,14 +730,17 @@ export default function App() {
                       </div>
                       <button
                         onClick={() => {
+                          // 🆕 删除引用标记 + 从 map 中移除
                           setMd((prev: string) => {
-                            // 删除引用标记和引用定义
                             let cleaned = prev
-                              .replace(new RegExp(`!\\[([^\\]]*)\\]\\[${ref.id}\\]\\n?`, 'g'), '')
-                              .replace(new RegExp(`\\n?\\[${ref.id}\\]:\\s+[^\\n]+\\n?`, 'g'), '');
-                            // 清理多余空行
+                              .replace(new RegExp(`!\\[([^\\]]*)\\]\\[${ref.id}\\]\\n?`, 'g'), '');
                             cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
                             return cleaned;
+                          });
+                          setImageBase64Map(prev => {
+                            const next = { ...prev };
+                            delete next[ref.id];
+                            return next;
                           });
                         }}
                         className="text-red-400 hover:text-red-600 px-1 shrink-0"
@@ -764,11 +785,11 @@ export default function App() {
           <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
             <h3 className="text-lg font-bold mb-4">GitHub 图床配置</h3>
             <input className="w-full border border-gray-300 rounded px-3 py-2 mb-3 text-sm" placeholder="Personal Access Token" type="password"
-              value={githubConfig.token} onChange={e => setGitHubConfig(prev => ({ ...prev, token: e.target.value }))} />
+              value={githubConfig.token} onChange={e => setGithubConfig(prev => ({ ...prev, token: e.target.value }))} />
             <input className="w-full border border-gray-300 rounded px-3 py-2 mb-3 text-sm" placeholder="仓库 (user/repo)"
-              value={githubConfig.repo} onChange={e => setGitHubConfig(prev => ({ ...prev, repo: e.target.value }))} />
+              value={githubConfig.repo} onChange={e => setGithubConfig(prev => ({ ...prev, repo: e.target.value }))} />
             <input className="w-full border border-gray-300 rounded px-3 py-2 mb-4 text-sm" placeholder="分支 (main)"
-              value={githubConfig.branch} onChange={e => setGitHubConfig(prev => ({ ...prev, branch: e.target.value }))} />
+              value={githubConfig.branch} onChange={e => setGithubConfig(prev => ({ ...prev, branch: e.target.value }))} />
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowGithubConfig(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">取消</button>
               <button onClick={saveGithubConfig} className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded">保存</button>
