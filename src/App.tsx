@@ -103,9 +103,12 @@ interface ImageRef {
 // 将 Markdown 与 base64 图片映射合并为完整 Markdown
 function mergeBase64Refs(markdown: string, base64Map: Record<string, string>): string {
   if (!base64Map || Object.keys(base64Map).length === 0) return markdown;
+  // 过滤掉 markdown 中已存在的引用定义，避免重复
   const refs = Object.entries(base64Map)
+    .filter(([id]) => !markdown.includes(`[${id}]:`))
     .map(([id, url]) => `[${id}]: ${url}`)
     .join('\n');
+  if (!refs) return markdown;
   return markdown.trimEnd() + '\n\n' + refs + '\n';
 }
 
@@ -168,6 +171,37 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const splitRef = useRef<HTMLDivElement>(null);
   const imgRefCounter = useRef(0);
+
+  // 初始化计数器 + 迁移旧版本内联 base64 引用定义
+  useEffect(() => {
+    // 1. 从 imageBase64Map 恢复计数器
+    const keys = Object.keys(imageBase64Map);
+    let max = 0;
+    for (const key of keys) {
+      const match = key.match(/^img-(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > max) max = num;
+      }
+    }
+    imgRefCounter.current = max;
+
+    // 2. 兼容旧版本：如果 imageBase64Map 为空，但 md 中包含内联 base64 引用定义，则迁移
+    if (keys.length === 0) {
+      const inlineRefRegex = /^\[([^\]]+)\]:\s+(data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+)$/gm;
+      const newMap: Record<string, string> = {};
+      let m;
+      while ((m = inlineRefRegex.exec(md)) !== null) {
+        newMap[m[1]] = m[2];
+      }
+      if (Object.keys(newMap).length > 0) {
+        setImageBase64Map(newMap);
+        // 清理 md 中的内联引用定义
+        setMd((prev: string) => prev.replace(/^\[([^\]]+)\]:\s+data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+\n?/gm, '').replace(/\n{3,}/g, '\n\n'));
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在组件挂载时执行一次
 
   // ── 从 imageBase64Map 提取图片引用信息 ──
   const extractImageRefs = useCallback((markdown: string, base64Map: Record<string, string>): ImageRef[] => {
