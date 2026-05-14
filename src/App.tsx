@@ -1,1003 +1,741 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+/**
+ * App.tsx — MD to WeChat 公众号排版编辑器 v3.2
+ * 新增：自动保存草稿、Markdown工具栏、分屏拖拽、全屏编辑、段落间距
+ */
 
-/* ============================================================
-   主题样式
-   ============================================================ */
-/* ============================================================
-   主题样式 —— 共 12 款主题
-   ============================================================ */
-const THEME_CSS: Record<string, string> = {
-  /* ── 1. 默认（橙心）── */
-  default: `#nice { font-size: 15px; color: #333333; line-height: 1.75; word-spacing: 1px; letter-spacing: 1px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 10px 0; color: #4a4a4a; line-height: 1.8; font-size: 15px; }
-#nice h1 { font-size: 24px; font-weight: bold; color: #1a1a1a; text-align: center; margin-top: 30px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #f5a623; line-height: 1.4; }
-#nice h2 { font-size: 20px; font-weight: bold; color: #1a1a1a; margin-top: 25px; margin-bottom: 15px; padding-left: 12px; border-left: 4px solid #f5a623; line-height: 1.4; }
-#nice h3 { font-size: 17px; font-weight: bold; color: #333333; margin-top: 20px; margin-bottom: 10px; line-height: 1.4; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #444444; margin-top: 15px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #555555; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 15px 20px; background-color: #fff9f0; border-left: 4px solid #f5a623; color: #666666; font-size: 14px; line-height: 1.8; border-radius: 0 4px 4px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #666666; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #f8f9fa; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.6; border: 1px solid #eaeaea; }
-#nice pre.code-block code { font-family: "SFMono-Regular", Consolas, monospace; background-color: transparent; padding: 0; font-size: 13px; }
-#nice code.inline-code { background-color: #fff5f5; color: #e53935; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #f5a623; text-decoration: none; border-bottom: 1px solid #f5a623; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 10px 0; padding-left: 24px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 6px 0; line-height: 1.8; color: #4a4a4a; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; line-height: 1.6; }
-#nice table.nice-table thead { background-color: #f5a623; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #e0e0e0; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #fafafa; }
-#nice table.nice-table tbody tr:hover { background-color: #f5f5f5; }
-#nice img { max-width: 100%; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #e0e0e0, transparent); margin: 30px 0; }
-#nice strong { color: #1a1a1a; font-weight: bold; }
-#nice em { color: #555555; font-style: italic; }
-#nice del { color: #999999; }`,
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { THEME_CSS, THEME_META, ThemeId } from './themes';
+import { parseMarkdown, extractToc, countWords, estimateReadingTime } from './parser';
+import { adaptForWechat, copyToClipboard } from './wechat-adapter';
 
-  /* ── 2. 优雅极简 ── */
-  elegant: `#nice { font-size: 15px; color: #2c3e50; line-height: 1.8; word-spacing: 0.5px; letter-spacing: 0.5px; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 12px 0; color: #34495e; line-height: 1.9; font-size: 15px; }
-#nice h1 { font-size: 26px; font-weight: 600; color: #1a252f; text-align: left; margin-top: 32px; margin-bottom: 20px; padding-bottom: 8px; border-bottom: 1px solid #ecf0f1; }
-#nice h2 { font-size: 21px; font-weight: 600; color: #1a252f; margin-top: 28px; margin-bottom: 14px; padding-bottom: 6px; border-bottom: 1px solid #ecf0f1; }
-#nice h3 { font-size: 18px; font-weight: 600; color: #2c3e50; margin-top: 22px; margin-bottom: 10px; }
-#nice h4, #nice h5, #nice h6 { font-size: 15px; font-weight: 600; color: #34495e; margin-top: 16px; margin-bottom: 8px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #f8f9fa; border-left: 3px solid #2c3e50; color: #5d6d7e; font-size: 14px; line-height: 1.8; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #f4f6f7; border-radius: 4px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
-#nice code.inline-code { background-color: #ecf0f1; color: #c0392b; padding: 2px 5px; border-radius: 3px; font-size: 13px; }
-#nice a { color: #2980b9; text-decoration: none; border-bottom: 1px solid #2980b9; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #34495e; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #2c3e50; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #dce4ec; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #f8f9fa; }
-#nice img { max-width: 100%; border-radius: 4px; }
-#nice hr.nice-hr { border: none; height: 1px; background: #ecf0f1; margin: 28px 0; }
-#nice strong { color: #1a252f; }`,
+const GITHUB_CDN_BASE = 'https://raw.githubusercontent.com/cscsxx606/md-to-wechat/main/images/';
+const DRAFT_KEY = 'md2wx_draft';
+const SPLIT_KEY = 'md2wx_split';
 
-  /* ── 3. 极客科技 ── */
-  tech: `#nice { font-size: 15px; color: #333333; line-height: 1.75; word-spacing: 1px; letter-spacing: 0.5px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 10px 0; color: #444444; line-height: 1.8; font-size: 15px; }
-#nice h1 { font-size: 24px; font-weight: bold; color: #00b894; text-align: center; margin-top: 30px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #00b894; }
-#nice h2 { font-size: 20px; font-weight: bold; color: #00b894; margin-top: 25px; margin-bottom: 15px; padding-left: 10px; border-left: 4px solid #00b894; }
-#nice h3 { font-size: 17px; font-weight: bold; color: #2d3436; margin-top: 20px; margin-bottom: 10px; }
-#nice h4, #nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #636e72; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 15px 20px; background-color: #f0f9f6; border-left: 4px solid #00b894; color: #555555; font-size: 14px; line-height: 1.8; border-radius: 0 4px 4px 0; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #2d3436; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #dfe6e9; }
-#nice pre.code-block code { color: #dfe6e9; background-color: transparent; }
-#nice code.inline-code { background-color: #e8f8f5; color: #00b894; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #00b894; text-decoration: none; border-bottom: 1px solid #00b894; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 10px 0; padding-left: 24px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 6px 0; line-height: 1.8; color: #444444; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #00b894; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #dfe6e9; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #f8f9fa; }
-#nice img { max-width: 100%; border-radius: 4px; }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #b2bec3, transparent); margin: 30px 0; }
-#nice strong { color: #2d3436; }`,
+const DEFAULT_MD = `# 欢迎使用 MD to WeChat
 
-  /* ── 4. 诗意国风 ── */
-  poetic: `#nice { font-size: 16px; color: #3e2723; line-height: 1.85; word-spacing: 2px; letter-spacing: 1px; font-family: "Noto Serif SC", "Songti SC", "SimSun", serif; padding: 24px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 12px 0; color: #4e342e; line-height: 2; font-size: 16px; text-indent: 2em; }
-#nice h1 { font-size: 26px; font-weight: bold; color: #3e2723; text-align: center; margin-top: 36px; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 2px solid #8d6e63; font-family: "Noto Serif SC", "SimSun", serif; }
-#nice h2 { font-size: 21px; font-weight: bold; color: #4e342e; margin-top: 28px; margin-bottom: 16px; padding-bottom: 6px; border-bottom: 1px solid #d7ccc8; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #5d4037; margin-top: 22px; margin-bottom: 12px; }
-#nice h4, #nice h5, #nice h6 { font-size: 16px; font-weight: bold; color: #6d4c41; margin-top: 16px; margin-bottom: 8px; }
-#nice blockquote.nice-quote { margin: 24px 0; padding: 20px 24px; background-color: #faf7f5; border-left: 3px solid #8d6e63; color: #5d4037; font-size: 15px; line-height: 1.9; font-style: italic; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #faf7f5; border-radius: 4px; overflow-x: auto; font-size: 13px; line-height: 1.6; border: 1px solid #efebe9; }
-#nice code.inline-code { background-color: #faf7f5; color: #bf360c; padding: 2px 5px; border-radius: 3px; font-size: 14px; }
-#nice a { color: #8d6e63; text-decoration: none; border-bottom: 1px dashed #8d6e63; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 32px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.9; color: #4e342e; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #8d6e63; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #d7ccc8; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #faf7f5; }
-#nice img { max-width: 100%; border-radius: 2px; }
-#nice hr.nice-hr { border: none; height: 1px; background: #d7ccc8; margin: 32px 0; }
-#nice strong { color: #3e2723; }`,
+## 功能一览
 
-  /* ── 5. 薄荷清新 ── */
-  mint: `#nice { font-size: 15px; color: #2d3e36; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 12px 0; color: #3d5a4c; line-height: 1.85; font-size: 15px; }
-#nice h1 { font-size: 25px; font-weight: bold; color: #1b4332; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #52b788; line-height: 1.4; }
-#nice h2 { font-size: 21px; font-weight: bold; color: #1b4332; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #52b788; line-height: 1.4; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #2d6a4f; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #95d5b2; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #40916c; margin-top: 16px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #52b788; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #f1f8f5; border-left: 4px solid #52b788; color: #52796f; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #52796f; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #f1f8f5; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; border: 1px solid #d8f3dc; }
-#nice pre.code-block code { font-family: "SFMono-Regular", Consolas, monospace; background-color: transparent; padding: 0; font-size: 13px; }
-#nice code.inline-code { background-color: #eafaf1; color: #2d6a4f; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #40916c; text-decoration: none; border-bottom: 1px solid #52b788; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #3d5a4c; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #52b788; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #d8f3dc; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #f1f8f5; }
-#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 10px rgba(45,106,79,0.1); }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #b7e4c7, transparent); margin: 30px 0; }
-#nice strong { color: #1b4332; }
-#nice em { color: #52796f; font-style: italic; }
-#nice del { color: #95a5a6; }`,
+**MD to WeChat** 是一款将 Markdown 文章一键转换为微信公众号排版格式的工具。
 
-  /* ── 6. 深海蓝 ── */
-  ocean: `#nice { font-size: 15px; color: #1e3a5f; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 12px 0; color: #2c5282; line-height: 1.85; font-size: 15px; }
-#nice h1 { font-size: 25px; font-weight: bold; color: #0f2744; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #3182ce; line-height: 1.4; }
-#nice h2 { font-size: 21px; font-weight: bold; color: #0f2744; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #3182ce; line-height: 1.4; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #1e3a5f; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #63b3ed; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #2b6cb0; margin-top: 16px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #3182ce; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #ebf8ff; border-left: 4px solid #3182ce; color: #2c5282; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #2c5282; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #0f2744; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #e2e8f0; }
-#nice pre.code-block code { color: #e2e8f0; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice code.inline-code { background-color: #ebf8ff; color: #2b6cb0; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #2b6cb0; text-decoration: none; border-bottom: 1px solid #3182ce; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #2c5282; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #3182ce; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #bee3f8; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #ebf8ff; }
-#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 10px rgba(49,130,206,0.15); }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #90cdf4, transparent); margin: 30px 0; }
-#nice strong { color: #0f2744; }
-#nice em { color: #4a6fa5; font-style: italic; }
-#nice del { color: #a0aec0; }`,
+### 支持格式
 
-  /* ── 7. 樱花粉 ── */
-  sakura: `#nice { font-size: 15px; color: #4a2545; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 12px 0; color: #6b3a63; line-height: 1.85; font-size: 15px; }
-#nice h1 { font-size: 25px; font-weight: bold; color: #832161; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #db2777; line-height: 1.4; }
-#nice h2 { font-size: 21px; font-weight: bold; color: #832161; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #db2777; line-height: 1.4; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #9d174d; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #f472b6; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #be185d; margin-top: 16px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #db2777; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #fdf2f8; border-left: 4px solid #db2777; color: #6b3a63; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #6b3a63; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #fdf2f8; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; border: 1px solid #fbcfe8; }
-#nice pre.code-block code { font-family: "SFMono-Regular", Consolas, monospace; background-color: transparent; padding: 0; font-size: 13px; }
-#nice code.inline-code { background-color: #fce7f3; color: #be185d; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #be185d; text-decoration: none; border-bottom: 1px solid #db2777; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #6b3a63; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #db2777; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #fbcfe8; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #fdf2f8; }
-#nice img { max-width: 100%; border-radius: 12px; box-shadow: 0 2px 12px rgba(219,39,119,0.12); }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #f9a8d4, transparent); margin: 30px 0; }
-#nice strong { color: #832161; }
-#nice em { color: #9d174d; font-style: italic; }
-#nice del { color: #d8b4c0; }`,
+- **12 款精美主题**：橙心、优雅极简、极客科技、诗意国风……
+- **Markdown 工具栏**：B/I/U/H1/H2/引用/链接/图片/列表/表格
+- **自动保存草稿**：localStorage 持久化，防误关闭
+- **代码语法高亮**：20+ 语言 Prism.js 高亮
+- **图片排版**：居中、右对齐、宽度、图注、画廊
 
-  /* ── 8. 暗夜黑 ── */
-  dark: `#nice { font-size: 15px; color: #e2e8f0; line-height: 1.75; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; background-color: #1a202c; border-radius: 8px; }
-#nice p { margin: 12px 0; color: #cbd5e0; line-height: 1.85; font-size: 15px; }
-#nice h1 { font-size: 25px; font-weight: bold; color: #f7fafc; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #4fd1c5; line-height: 1.4; }
-#nice h2 { font-size: 21px; font-weight: bold; color: #f7fafc; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #4fd1c5; line-height: 1.4; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #e2e8f0; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #81e6d9; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #a0aec0; margin-top: 16px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #4fd1c5; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #2d3748; border-left: 4px solid #4fd1c5; color: #a0aec0; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #a0aec0; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #2d3748; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; border: 1px solid #4a5568; color: #e2e8f0; }
-#nice pre.code-block code { color: #e2e8f0; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice code.inline-code { background-color: #2d3748; color: #4fd1c5; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #4fd1c5; text-decoration: none; border-bottom: 1px solid #4fd1c5; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #cbd5e0; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #4fd1c5; color: #1a202c; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #4a5568; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #2d3748; }
-#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.4); }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #4a5568, transparent); margin: 30px 0; }
-#nice strong { color: #f7fafc; }
-#nice em { color: #a0aec0; font-style: italic; }
-#nice del { color: #718096; }`,
+### 表格演示
 
-  /* ── 9. 砖红复古 ── */
-  retro: `#nice { font-size: 15px; color: #3c2f2f; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: "Noto Serif SC", Georgia, serif; padding: 24px; max-width: 680px; margin: 0 auto; background-color: #fdf6e3; }
-#nice p { margin: 12px 0; color: #5d4037; line-height: 1.9; font-size: 15px; }
-#nice h1 { font-size: 26px; font-weight: bold; color: #5d4037; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #bf360c; line-height: 1.4; font-family: "Noto Serif SC", Georgia, serif; }
-#nice h2 { font-size: 22px; font-weight: bold; color: #5d4037; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #bf360c; line-height: 1.4; font-family: "Noto Serif SC", Georgia, serif; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #6d4c41; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #e65100; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #795548; margin-top: 16px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #8d6e63; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #fff8e1; border-left: 4px solid #bf360c; color: #5d4037; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #5d4037; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #3e2723; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #efebe9; }
-#nice pre.code-block code { color: #efebe9; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice code.inline-code { background-color: #fff8e1; color: #bf360c; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #bf360c; text-decoration: none; border-bottom: 1px solid #bf360c; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #5d4037; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #bf360c; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #ffe0b2; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #fff8e1; }
-#nice img { max-width: 100%; border-radius: 4px; box-shadow: 0 2px 8px rgba(191,54,12,0.15); border: 1px solid #efebe9; }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #d7ccc8, transparent); margin: 30px 0; }
-#nice strong { color: #3e2723; }
-#nice em { color: #6d4c41; font-style: italic; }
-#nice del { color: #bcaaa4; }`,
+| 功能 | 状态 |
+|------|------|
+| 自动保存 | ✅ |
+| 工具栏 | ✅ |
+| 分屏拖拽 | ✅ |
+| 全屏编辑 | ✅ |
 
-  /* ── 10. 紫罗兰 ── */
-  violet: `#nice { font-size: 15px; color: #3b0764; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 12px 0; color: #581c87; line-height: 1.85; font-size: 15px; }
-#nice h1 { font-size: 25px; font-weight: bold; color: #4c1d95; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #8b5cf6; line-height: 1.4; }
-#nice h2 { font-size: 21px; font-weight: bold; color: #4c1d95; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #8b5cf6; line-height: 1.4; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #6d28d9; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #c4b5fd; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #7c3aed; margin-top: 16px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #8b5cf6; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #f5f3ff; border-left: 4px solid #8b5cf6; color: #581c87; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #581c87; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #2e1065; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #e9d5ff; }
-#nice pre.code-block code { color: #e9d5ff; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice code.inline-code { background-color: #ede9fe; color: #7c3aed; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #7c3aed; text-decoration: none; border-bottom: 1px solid #8b5cf6; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #581c87; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #8b5cf6; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #ddd6fe; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #f5f3ff; }
-#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 10px rgba(139,92,246,0.12); }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #c4b5fd, transparent); margin: 30px 0; }
-#nice strong { color: #4c1d95; }
-#nice em { color: #7c3aed; font-style: italic; }
-#nice del { color: #c4b5fd; }`,
+> 点击上方「复制到公众号」→ 微信编辑器粘贴即可。`;
 
-  /* ── 11. 石墨灰 ── */
-  graphite: `#nice { font-size: 15px; color: #374151; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 12px 0; color: #4b5563; line-height: 1.85; font-size: 15px; }
-#nice h1 { font-size: 25px; font-weight: bold; color: #111827; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #6366f1; line-height: 1.4; }
-#nice h2 { font-size: 21px; font-weight: bold; color: #111827; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #6366f1; line-height: 1.4; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #1f2937; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #a5b4fc; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #374151; margin-top: 16px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #6366f1; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #f5f7ff; border-left: 4px solid #6366f1; color: #4b5563; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #4b5563; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #1f2937; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #e5e7eb; }
-#nice pre.code-block code { color: #e5e7eb; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice code.inline-code { background-color: #eef2ff; color: #4f46e5; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #4f46e5; text-decoration: none; border-bottom: 1px solid #6366f1; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #4b5563; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #6366f1; color: #ffffff; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #c7d2fe; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #f5f7ff; }
-#nice img { max-width: 100%; border-radius: 6px; box-shadow: 0 2px 10px rgba(99,102,241,0.1); }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #a5b4fc, transparent); margin: 30px 0; }
-#nice strong { color: #111827; }
-#nice em { color: #6b7280; font-style: italic; }
-#nice del { color: #9ca3af; }`,
+type ImageMode = 'base64' | 'github';
+type GitHubConfig = { token: string; repo: string; branch: string };
 
-  /* ── 12. 阳光金 ── */
-  sunshine: `#nice { font-size: 15px; color: #451a03; line-height: 1.8; word-spacing: 1px; letter-spacing: 0.5px; word-break: break-word; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; max-width: 680px; margin: 0 auto; }
-#nice p { margin: 12px 0; color: #78350f; line-height: 1.85; font-size: 15px; }
-#nice h1 { font-size: 25px; font-weight: bold; color: #92400e; text-align: center; margin-top: 32px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #f59e0b; line-height: 1.4; }
-#nice h2 { font-size: 21px; font-weight: bold; color: #92400e; margin-top: 28px; margin-bottom: 14px; padding-left: 14px; border-left: 4px solid #f59e0b; line-height: 1.4; }
-#nice h3 { font-size: 18px; font-weight: bold; color: #b45309; margin-top: 22px; margin-bottom: 10px; padding-left: 10px; border-left: 2px solid #fcd34d; }
-#nice h4 { font-size: 16px; font-weight: bold; color: #d97706; margin-top: 16px; margin-bottom: 8px; }
-#nice h5, #nice h6 { font-size: 15px; font-weight: bold; color: #f59e0b; margin-top: 12px; margin-bottom: 6px; }
-#nice blockquote.nice-quote { margin: 20px 0; padding: 16px 20px; background-color: #fffbeb; border-left: 4px solid #f59e0b; color: #78350f; font-size: 14px; line-height: 1.8; border-radius: 0 6px 6px 0; }
-#nice blockquote.nice-quote p { margin: 0; color: #78350f; }
-#nice pre.code-block { margin: 20px 0; padding: 16px; background-color: #451a03; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; color: #fef3c7; }
-#nice pre.code-block code { color: #fef3c7; background-color: transparent; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice code.inline-code { background-color: #fef3c7; color: #b45309; padding: 2px 6px; border-radius: 4px; font-size: 13px; font-family: "SFMono-Regular", Consolas, monospace; }
-#nice a { color: #d97706; text-decoration: none; border-bottom: 1px solid #f59e0b; }
-#nice ul.nice-ul, #nice ol.nice-ol { margin: 12px 0; padding-left: 28px; }
-#nice ul.nice-ul li, #nice ol.nice-ol li { margin: 8px 0; line-height: 1.8; color: #78350f; }
-#nice table.nice-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }
-#nice table.nice-table thead { background-color: #f59e0b; color: #451a03; }
-#nice table.nice-table th, #nice table.nice-table td { padding: 10px 12px; border: 1px solid #fde68a; text-align: left; }
-#nice table.nice-table tbody tr:nth-child(even) { background-color: #fffbeb; }
-#nice img { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 10px rgba(245,158,11,0.15); }
-#nice hr.nice-hr { border: none; height: 1px; background: linear-gradient(to right, transparent, #fcd34d, transparent); margin: 30px 0; }
-#nice strong { color: #451a03; }
-#nice em { color: #b45309; font-style: italic; }
-#nice del { color: #d4a574; }`
-};
-
-/* ============================================================
-   默认 Markdown 示例
-   ============================================================ */
-const DEFAULT_MD = `# Markdown Nice 排版演示
-
-> 这是一段引用文字，用来展示引用块的样式效果。在微信公众号文章中，合理的引用可以突出重点内容。
-
-## 一、基础排版
-
-这是一段普通正文。**这是加粗文字**，*这是斜体文字*，~~这是删除线~~。微信公众号文章的理想行高是 1.75，字号 15px，每行约 21 个汉字，这样的阅读体验最为舒适。
-
-### 1.1 列表演示
-
-无序列表：
-- 支持自定义样式的 Markdown 编辑器
-- 一键排版，复制即可粘贴到公众号
-- 支持代码高亮、数学公式、脚注
-
-有序列表：
-1. 打开编辑器，粘贴 Markdown 内容
-2. 选择合适的主题风格
-3. 点击复制按钮，粘贴到公众号
-
-### 1.2 链接与图片
-
-[访问 MdNice 官网](https://mdnice.com/)
-
-![示例图片](https://picsum.photos/600/300)
-
-## 二、高级元素
-
-### 2.1 代码块
-
-行内代码：\`npm install md-to-wechat\`
-
-JavaScript 代码块：
-\`\`\`javascript
-function greet(name) {
-  console.log(\`Hello, \${name}!\`);
-  return {
-    message: "欢迎使用 Markdown 转公众号排版系统",
-    timestamp: Date.now()
-  };
-}
-\`\`\`
-
-Python 代码块：
-\`\`\`python
-def calculate_fibonacci(n):
-    if n <= 1:
-        return n
-    return calculate_fibonacci(n-1) + calculate_fibonacci(n-2)
-
-print(calculate_fibonacci(10))
-\`\`\`
-
-### 2.2 表格
-
-| 功能 | 描述 | 支持平台 |
-|------|------|----------|
-| 一键排版 | 自动渲染主题样式 | 微信公众号 |
-| 代码高亮 | 支持 30+ 语言 | 全平台 |
-| 数学公式 | LaTeX 公式转图片 | 微信公众号 |
-| 脚注转换 | 外链自动转脚注 | 微信公众号 |
-
-### 2.3 分割线
-
----
-
-## 三、图片上传功能
-
-🎉 **本项目支持图片上传！** 你可以：
-
-1. **点击上方「上传图片」按钮** 选择图片
-2. **直接粘贴**（Ctrl+V / Cmd+V）截图或图片
-3. **拖拽图片** 到编辑器区域
-
-支持三种图床模式（见顶部「图床」下拉框）：
-- **Base64 内嵌**：零配置，图片直接嵌入 Markdown（适合小图）
-- **GitHub 图床**：免费、稳定，需配置 Token（适合正式文章）
-- **外部 URL**：手动输入图片链接
-
----
-
-## 四、结语
-
-以上就是 Markdown 转公众号排版系统的完整演示。你可以左侧编辑 Markdown，右侧实时预览效果。选择合适的主题后，复制到微信公众号编辑器即可！
-`;
-
-/* ============================================================
-   工具函数：Markdown → HTML
-   ============================================================ */
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// ─── Markdown 工具栏配置 ────────────────────────────
+interface ToolbarAction {
+  key: string;  label: string;  title: string;
+  prefix: string;  suffix: string;  block?: boolean;
 }
 
-function simpleMarkdownToHtml(md: string): string {
-  let html = md;
-  // 先保护代码块
-  const codeBlocks: Record<string, string> = {};
-  let cbIdx = 0;
-  html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
-    const key = `__CODE_BLOCK_${cbIdx++}__`;
-    const language = lang || 'plaintext';
-    codeBlocks[key] = `<pre class="code-block" data-lang="${language}"><code class="language-${language}">${escapeHtml(code.trim())}</code></pre>`;
-    return key;
-  });
-  // 行内代码
-  html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-  // 图片（支持 Base64）
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;display:block;margin:16px auto;border-radius:4px;" data-ratio="0.5" data-type="png"/>');
-  // 标题
-  html = html.replace(/^###### (.*$)/gim, '<h6>$1</h6>');
-  html = html.replace(/^##### (.*$)/gim, '<h5>$1</h5>');
-  html = html.replace(/^#### (.*$)/gim, '<h4>$1</h4>');
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>');
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>');
-  html = html.replace(/^# (.*$)/gim, '<h1>$1</h1>');
-  // 引用：支持多行连续引用
-  html = html.replace(/((?:^>\s*.+(?:\n|$))+)/gm, (match) => {
-    const lines = match.trim().split('\n').map(line => line.replace(/^>\s*/, '')).filter(line => line.trim());
-    if (lines.length === 0) return '';
-    return `<blockquote class="nice-quote"><p>${lines.join('<br/>')}</p></blockquote>`;
-  });
-  html = html.replace(/^>\s*$/gm, '');
-  // 强调
-  html = html.replace(/\*\*\*(.*?)\*\*\*/g, '<em><strong>$1</strong></em>');
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  html = html.replace(/~~(.*?)~~/g, '<del>$1</del>');
-  // 链接
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" data-external="true">$1</a>');
-  // 表格
-  html = html.replace(/((?:\|.*\|\n)+)/g, (match) => {
-    const rows = match.trim().split('\n').filter(r => r.trim());
-    if (rows.length < 2) return match;
-    let table = '<table class="nice-table"><thead><tr>';
-    const headers = rows[0].split('|').filter(c => c.trim());
-    headers.forEach(h => table += `<th>${h.trim()}</th>`);
-    table += '</tr></thead><tbody>';
-    for (let i = 2; i < rows.length; i++) {
-      table += '<tr>';
-      rows[i].split('|').filter(c => c.trim()).forEach(c => table += `<td>${c.trim()}</td>`);
-      table += '</tr>';
-    }
-    table += '</tbody></table>';
-    return table;
-  });
-  // 列表
-  html = html.replace(/((?:^\s*[-*+] .+(?:\n|$))+)/gm, (match) => {
-    const items = match.trim().split('\n').map(line => `<li>${line.replace(/^\s*[-*+]\s*/, '')}</li>`).join('');
-    return `<ul class="nice-ul">${items}</ul>`;
-  });
-  html = html.replace(/((?:^\s*\d+\. .+(?:\n|$))+)/gm, (match) => {
-    const items = match.trim().split('\n').map(line => `<li>${line.replace(/^\s*\d+\.\s*/, '')}</li>`).join('');
-    return `<ol class="nice-ol">${items}</ol>`;
-  });
-  // 分割线
-  html = html.replace(/^---+$/gm, '<hr class="nice-hr"/>');
-  // 段落处理：智能识别块级元素，避免错误包裹
-  const blockLevelRegex = /^<(blockquote|table|ul|ol|pre|hr|h[1-6]|img|div)\b/;
-  const lines = html.split('\n');
-  let result = '';
-  let inPara = false;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      if (inPara) { result += '</p>'; inPara = false; }
-      result += '\n';
-      continue;
-    }
-    if (blockLevelRegex.test(trimmed)) {
-      if (inPara) { result += '</p>'; inPara = false; }
-      result += line + '\n';
-    } else {
-      if (!inPara) { result += '<p>'; inPara = true; }
-      result += line + ' ';
-    }
-  }
-  if (inPara) result += '</p>';
-  html = result;
-  html = html.replace(/<p>\s*<\/p>/g, '');
-  // 恢复代码块
-  Object.entries(codeBlocks).forEach(([key, val]) => {
-    html = html.replace(key, val);
-  });
-  return html;
-}
+const TOOLBAR_ITEMS: ToolbarAction[] = [
+  { key: 'bold', label: 'B', title: '粗体 (Ctrl+B)', prefix: '**', suffix: '**' },
+  { key: 'italic', label: 'I', title: '斜体 (Ctrl+I)', prefix: '*', suffix: '*' },
+  { key: 'strike', label: 'S', title: '删除线', prefix: '~~', suffix: '~~' },
+  { key: 'code', label: '`', title: '行内代码', prefix: '`', suffix: '`' },
+  { key: 'divider', label: '', title: '', prefix: '', suffix: '' },
+  { key: 'h1', label: 'H1', title: '一级标题', prefix: '# ', suffix: '', block: true },
+  { key: 'h2', label: 'H2', title: '二级标题', prefix: '## ', suffix: '', block: true },
+  { key: 'h3', label: 'H3', title: '三级标题', prefix: '### ', suffix: '', block: true },
+  { key: 'divider2', label: '', title: '', prefix: '', suffix: '' },
+  { key: 'quote', label: '❝', title: '引用块', prefix: '> ', suffix: '', block: true },
+  { key: 'link', label: '🔗', title: '链接', prefix: '[', suffix: '](url)' },
+  { key: 'image', label: '🖼', title: '图片', prefix: '![alt](', suffix: ')' },
+  { key: 'divider3', label: '', title: '', prefix: '', suffix: '' },
+  { key: 'ul', label: '•', title: '无序列表', prefix: '- ', suffix: '', block: true },
+  { key: 'ol', label: '1.', title: '有序列表', prefix: '1. ', suffix: '', block: true },
+  { key: 'table', label: '⊞', title: '插入表格', prefix: '', suffix: '', block: true },
+  { key: 'hr', label: '—', title: '分割线', prefix: '\n---\n', suffix: '', block: true },
+];
 
-/* ============================================================
-   工具函数：微信适配
-   ============================================================ */
-function adaptForWechat(html: string): string {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(`<div id="nice">${html}</div>`, 'text/html');
-  const nice = doc.getElementById('nice')!;
-
-  const links = nice.querySelectorAll('a[data-external="true"]');
-  const footnotes: { index: number; text: string; href: string }[] = [];
-  links.forEach((a, i) => {
-    const el = a as HTMLAnchorElement;
-    footnotes.push({ index: i + 1, text: el.textContent || '', href: el.href });
-    const span = doc.createElement('span');
-    span.innerHTML = `<span style="color:#f5a623;font-weight:bold;">${el.textContent}</span><sup style="color:#f5a623;font-size:12px;">[${i + 1}]</sup>`;
-    el.replaceWith(span);
-  });
-
-  if (footnotes.length > 0) {
-    const hr = doc.createElement('hr');
-    hr.className = 'nice-hr';
-    nice.appendChild(hr);
-    const section = doc.createElement('div');
-    section.style.cssText = 'margin-top:20px;padding:16px;background-color:#fafafa;border-radius:6px;';
-    let fnHtml = '<h4 style="font-size:15px;font-weight:bold;color:#333;margin-bottom:12px;">参考资料</h4><ol style="padding-left:20px;margin:0;">';
-    footnotes.forEach(fn => {
-      fnHtml += `<li style="font-size:13px;color:#666;line-height:1.8;margin:6px 0;">${fn.text}: <span style="color:#888;word-break:break-all;">${fn.href}</span></li>`;
-    });
-    fnHtml += '</ol>';
-    section.innerHTML = fnHtml;
-    nice.appendChild(section);
-  }
-
-  const all = nice.querySelectorAll('*');
-  all.forEach(el => {
-    const style = (el as HTMLElement).style;
-    if (style.color === 'rgb(0, 0, 0)' || style.color === '#000000' || style.color === '#000') {
-      style.color = '#333333';
-    }
-  });
-
-  return nice.innerHTML;
-}
-
-function generateOutputHtml(md: string, themeId: string, mode: string): string {
-  let html = simpleMarkdownToHtml(md);
-  if (mode === 'wechat') {
-    html = adaptForWechat(html);
-  }
-  const css = (THEME_CSS as any)[themeId] || (THEME_CSS as any).default;
-  return `<style>${css}</style>\n<div id="nice">${html}</div>`;
-}
-
-/* ============================================================
-   图片上传：转 Base64
-   ============================================================ */
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-/* ============================================================
-   图片上传：GitHub 图床
-   ============================================================ */
-async function uploadToGitHub(file: File, token: string, repo: string): Promise<string> {
-  const content = await fileToBase64(file);
-  const base64Content = content.split(',')[1];
-  const path = `images/${Date.now()}_${file.name}`;
-  const url = `https://api.github.com/repos/${repo}/contents/${path}`;
-
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `token ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: `Upload image: ${file.name}`,
-      content: base64Content,
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `GitHub 上传失败: ${res.status}`);
-  }
-
-  const data = await res.json();
-  // GitHub raw URL
-  return data.content.download_url.replace('raw.githubusercontent.com', 'cdn.jsdelivr.net/gh').replace('/master/', '@master/');
-}
-
-/* ============================================================
-   主组件
-   ============================================================ */
 export default function App() {
-  const [md, setMd] = useState(DEFAULT_MD);
-  const [theme, setTheme] = useState('default');
-  const [mode, setMode] = useState('preview');
-  const [toast, setToast] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [imageMode, setImageMode] = useState<'base64' | 'github' | 'url'>('base64');
-  const [showGhConfig, setShowGhConfig] = useState(false);
-  const [ghToken, setGhToken] = useState('');
-  const [ghRepo, setGhRepo] = useState('');
+  // ── 状态 ──
+  const [md, setMd] = useState(() => {
+    // 恢复草稿
+    try {
+      const draft = localStorage.getItem(DRAFT_KEY);
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        // 恢复主题
+        return parsed.md || DEFAULT_MD;
+      }
+    } catch {}
+    return DEFAULT_MD;
+  });
+  const [theme, setTheme] = useState<ThemeId>(() => {
+    try { const d = localStorage.getItem(DRAFT_KEY); return d ? JSON.parse(d).theme || 'default' : 'default'; } catch { return 'default'; }
+  });
+  const [mode, setMode] = useState<'preview' | 'wechat'>('preview');
+  const [showToc, setShowToc] = useState(false);
+  const [autoSpace, setAutoSpace] = useState(true);
+  const [firstIndent, setFirstIndent] = useState(false);
+  const [imageMode, setImageMode] = useState<ImageMode>('base64');
   const [dragOver, setDragOver] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [importedFileName, setImportedFileName] = useState('');
+  const [showImageToolbar, setShowImageToolbar] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(() => {
+    try { return !!localStorage.getItem(DRAFT_KEY); } catch { return false; }
+  });
+  const [spacing, setSpacing] = useState<'compact' | 'normal' | 'loose'>('normal');
+  const [splitPct, setSplitPct] = useState(() => {
+    try { const v = localStorage.getItem(SPLIT_KEY); return v ? parseInt(v) : 50; } catch { return 50; }
+  });
+  const [githubConfig, setGitHubConfig] = useState<GitHubConfig>(() => {
+    try {
+      const saved = localStorage.getItem('md2wx_github');
+      return saved ? JSON.parse(saved) : { token: '', repo: '', branch: 'main' };
+    } catch { return { token: '', repo: '', branch: 'main' }; }
+  });
+  const [showGithubConfig, setShowGithubConfig] = useState(false);
+  const [showImagePanel, setShowImagePanel] = useState(false);
 
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLIFrameElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const splitRef = useRef<HTMLDivElement>(null);
+  const imgRefCounter = useRef(0);
 
-  /* Toast */
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2500);
-  };
+  // ── 提取内嵌 base64 图片引用 ──
+  interface ImageRef {
+    id: string;
+    alt: string;
+    url: string;
+    sizeKB: number;
+  }
+  const extractImageRefs = useCallback((markdown: string): ImageRef[] => {
+    const refs: ImageRef[] = [];
+    const refDefRegex = /^\[([^\]]+)\]:\s+(data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+)$/gm;
+    let match;
+    while ((match = refDefRegex.exec(markdown)) !== null) {
+      const id = match[1];
+      const url = match[2];
+      const altMatch = markdown.match(new RegExp(`!\\[([^\\]]*)\\]\\[${id}\\]`));
+      const alt = altMatch ? altMatch[1] : '图片';
+      const base64Part = url.split(',')[1];
+      const sizeKB = base64Part ? Math.round((base64Part.length * 0.75) / 1024) : 0;
+      refs.push({ id, alt, url, sizeKB });
+    }
+    return refs;
+  }, []);
+  const imageRefs = useMemo(() => extractImageRefs(md), [md, extractImageRefs]);
 
-  /* 预览更新 */
+  const wordCount = useMemo(() => countWords(md), [md]);
+  const readingTime = useMemo(() => estimateReadingTime(md), [md]);
+  const tocItems = useMemo(() => extractToc(md), [md]);
+
+  // ── 自动保存草稿（防抖 1 秒）──
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ md, theme })); } catch {}
+    }, 1000);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [md, theme]);
+
+  // ── 渲染 HTML ──
+  const renderHtml = useCallback((inputMd: string, inputTheme: ThemeId, inputMode: 'preview' | 'wechat') => {
+    const css = THEME_CSS[inputTheme] || THEME_CSS.default;
+    let extraCss = '';
+    if (firstIndent) extraCss += `#nice p.nice-indent, #nice p { text-indent:2em; }`;
+    // 段落间距
+    const spacingMap = { compact: '6px', normal: '12px', loose: '20px' };
+    extraCss += `#nice p { margin-top:${spacingMap[spacing]} !important; margin-bottom:${spacingMap[spacing]} !important; }`;
+    // 公众号模式统一字号
+    if (inputMode === 'wechat') {
+      extraCss += `#nice, #nice p, #nice li, #nice td, #nice th { font-size:15px !important; }`;
+    }
+
+    let bodyHtml = parseMarkdown(inputMd, { autoSpace, showToc, firstIndent });
+    if (inputMode === 'wechat') bodyHtml = adaptForWechat(bodyHtml);
+
+    const wrapped = `<div id="nice">${bodyHtml}</div>`;
+
+    const prismCSS = `<style>
+      code[class*="language-"], pre[class*="language-"] { color:#333; background:0 0; font-family:"SFMono-Regular",Consolas,Monaco,monospace; font-size:13px; text-align:left; white-space:pre; word-spacing:normal; word-break:normal; word-wrap:normal; line-height:1.6; tab-size:4; hyphens:none; }
+      pre[class*="language-"] { padding:1em; margin:.5em 0; overflow:auto; border-radius:4px; }
+      :not(pre)>code[class*="language-"] { padding:.1em; border-radius:.3em; }
+      .token.comment,.token.block-comment,.token.prolog,.token.doctype,.token.cdata { color:#7d8b99; }
+      .token.punctuation { color:#5f6364; }
+      .token.property,.token.tag,.token.boolean,.token.number,.token.function-name,.token.constant,.token.symbol,.token.deleted { color:#c92c2c; }
+      .token.selector,.token.attr-name,.token.string,.token.char,.token.function,.token.builtin,.token.inserted { color:#2f9c0a; }
+      .token.operator,.token.entity,.token.url,.token.variable { color:#a67f59; }
+      .token.atrule,.token.attr-value,.token.keyword,.token.class-name { color:#1990b8; }
+      .token.regex,.token.important { color:#e90; } .token.important,.token.bold { font-weight:700; } .token.italic { font-style:italic; } .token.entity { cursor:help; }
+      ${inputTheme === 'dark' ? `
+      code[class*="language-"], pre[class*="language-"] { color:#e0e0e0; }
+      .token.comment { color:#6a737d; } .token.punctuation { color:#9e9e9e; }
+      .token.property,.token.tag,.token.boolean,.token.number,.token.constant,.token.symbol,.token.deleted { color:#ff8a80; }
+      .token.selector,.token.attr-name,.token.string,.token.char,.token.function,.token.builtin,.token.inserted { color:#69f0ae; }
+      .token.operator,.token.entity,.token.url,.token.variable { color:#ffd54f; }
+      .token.atrule,.token.attr-value,.token.keyword,.token.class-name { color:#82b1ff; }` : ''}
+      .nice-code { background:#f8f9fa; border:1px solid #eaeaea; }
+      .nice-footnotes { padding:12px 16px; background:#fafafa; border-radius:6px; margin-top:20px; }
+      .nice-figure { margin:16px 0; } .nice-figcaption { font-size:13px; color:#888; margin-top:6px; line-height:1.6; }
+      .nice-gallery { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; } .nice-gallery img { width:100%; height:auto; object-fit:cover; border-radius:4px; }
+      .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    </style>`;
+
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;">${wrapped}</body></html>`;
+  }, [autoSpace, showToc, firstIndent, spacing]);
+
+  // ── 更新预览 ──
   const updatePreview = useCallback(() => {
-    let html = simpleMarkdownToHtml(md);
-    if (mode === 'wechat') {
-      html = adaptForWechat(html);
-    }
-    const css = (THEME_CSS as any)[theme] || (THEME_CSS as any).default;
-    const fullHtml = `<!DOCTYPE html>\n<html><head><meta charset="UTF-8">\n<style>${css}</style>\n</head><body><div id="nice">${html}</div></body></html>`;
-    if (previewRef.current) {
-      previewRef.current.srcdoc = fullHtml;
-    }
-  }, [md, theme, mode]);
+    if (!previewRef.current) return;
+    const doc = previewRef.current.contentDocument;
+    if (!doc) return;
+    doc.open();
+    doc.write(renderHtml(md, theme, mode));
+    doc.close();
+  }, [md, theme, mode, renderHtml]);
+
+  useEffect(() => { updatePreview(); }, [updatePreview]);
+
+  // ── 复制 ──
+  const handleCopyForWechat = useCallback(async () => {
+    const html = renderHtml(md, theme, 'wechat');
+    const match = html.match(/<div id="nice">([\s\S]*)<\/div>/);
+    const content = match ? match[1] : html;
+    const success = await copyToClipboard(content);
+    if (success) { setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }
+    else alert('复制失败，请手动复制。');
+  }, [md, theme, renderHtml]);
+
+  const handleCopy = useCallback(async () => {
+    const html = renderHtml(md, theme, 'wechat');
+    const success = await copyToClipboard(html);
+    if (success) { setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }
+  }, [md, theme, renderHtml]);
+
+  const handleDownload = useCallback(() => {
+    const html = renderHtml(md, theme, mode);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `md-to-wechat-${Date.now()}.html`; a.click();
+    URL.revokeObjectURL(url);
+  }, [md, theme, mode, renderHtml]);
 
   useEffect(() => {
-    updatePreview();
-  }, [updatePreview]);
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleDownload(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleDownload]);
 
-  /* 插入 Markdown 文本 */
-  const insertAtCursor = (text: string) => {
+  // ── 文本选区操作 ──
+  const wrapSelection = useCallback((prefix: string, suffix: string, block?: boolean) => {
     const ta = textareaRef.current;
     if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const newMd = md.substring(0, start) + text + md.substring(end);
-    setMd(newMd);
-    requestAnimationFrame(() => {
-      ta.selectionStart = ta.selectionEnd = start + text.length;
-      ta.focus();
-    });
-  };
+    const start = ta.selectionStart, end = ta.selectionEnd;
+    const text = ta.value;
+    const sel = text.substring(start, end);
 
-  /* 处理图片文件 */
-  const processImageFile = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      showToast('请选择图片文件');
+    if (block) {
+      // 块级元素：整行或选中内容前插入前缀
+      const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+      const beforeLine = text.slice(0, lineStart);
+      const afterLine = text.slice(lineStart);
+      let newText: string;
+      if (start === end) {
+        newText = beforeLine + prefix + afterLine;
+        setTimeout(() => ta.setSelectionRange(lineStart + prefix.length, lineStart + prefix.length), 0);
+      } else {
+        newText = beforeLine + prefix + sel + suffix + afterLine.slice(end - lineStart);
+        setTimeout(() => ta.setSelectionRange(lineStart, lineStart + prefix.length + sel.length + suffix.length), 0);
+      }
+      setMd(newText);
+      setTimeout(() => ta.focus(), 0);
+    } else {
+      const newText = text.slice(0, start) + prefix + (sel || '文本') + suffix + text.slice(end);
+      setMd(newText);
+      const cursorPos = start + prefix.length + (sel || '文本').length + suffix.length;
+      setTimeout(() => { ta.focus(); ta.setSelectionRange(cursorPos, cursorPos); }, 0);
+    }
+  }, []);
+
+  const insertTable = useCallback(() => {
+    const table = `\n| 列1 | 列2 | 列3 |\n|-----|-----|-----|\n| 内容 | 内容 | 内容 |\n`;
+    setMd((prev: string) => {
+      const ta = textareaRef.current;
+      if (!ta) return prev + table;
+      const start = ta.selectionStart;
+      const before = prev.slice(0, start), after = prev.slice(start);
+      const newText = before + table + after;
+      setTimeout(() => { ta.focus(); ta.setSelectionRange(start + 2, start + 6); }, 0);
+      return newText;
+    });
+  }, []);
+
+  const handleToolbar = useCallback((action: ToolbarAction) => {
+    if (action.key === 'table') { insertTable(); return; }
+    wrapSelection(action.prefix, action.suffix, action.block);
+  }, [wrapSelection, insertTable]);
+
+  // ── 追加 Markdown ──
+  const appendMd = useCallback((text: string, isBase64Image = false) => {
+    if (isBase64Image) {
+      // 从 text 中搜索 ![alt](url) 格式的图片（可能前面有压缩提示等前缀）
+      const imgMatch = text.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+      if (!imgMatch) {
+        // fallback：当做普通文本
+        setMd((prev: string) => prev + '\n' + text + '\n');
+        return;
+      }
+      const [, alt, base64Src] = imgMatch;
+      imgRefCounter.current++;
+      const refId = `img-${imgRefCounter.current}`;
+      const inlineImg = `![${alt || '图片'}][${refId}]`;
+      const refDef = `\n[${refId}]: ${base64Src}`;
+      // 保留图片前面的前缀文本（如压缩提示）
+      const prefixText = text.slice(0, imgMatch.index);
+      setMd((prev: string) => {
+        const ta = textareaRef.current;
+        if (!ta) return prev + '\n' + prefixText + inlineImg + refDef;
+        const start = ta.selectionStart, end = ta.selectionEnd;
+        const before = prev.slice(0, start), after = prev.slice(end);
+        const newText = before + (before && !before.endsWith('\n') ? '\n' : '') + prefixText + inlineImg + refDef + '\n' + after;
+        setTimeout(() => { ta.focus(); ta.setSelectionRange(start + prefixText.length + inlineImg.length + 1, start + prefixText.length + inlineImg.length + 1); }, 0);
+        return newText;
+      });
       return;
     }
-    setUploading(true);
-    try {
-      let imageUrl: string;
-      if (imageMode === 'base64') {
-        imageUrl = await fileToBase64(file);
-        showToast(`已插入图片（Base64，${(file.size / 1024).toFixed(1)}KB）`);
-      } else if (imageMode === 'github') {
-        if (!ghToken || !ghRepo) {
-          setShowGhConfig(true);
-          setUploading(false);
-          return;
-        }
-        imageUrl = await uploadToGitHub(file, ghToken, ghRepo);
-        showToast('GitHub 图床上传成功！');
-      } else {
-        // url 模式：转 base64 但提示用户
-        imageUrl = await fileToBase64(file);
-        showToast('已转为 Base64，如需 URL 请使用图床');
-      }
-      insertAtCursor(`\n![${file.name}](${imageUrl})\n`);
-    } catch (e: any) {
-      showToast(`上传失败: ${e.message || '未知错误'}`);
-    } finally {
-      setUploading(false);
-    }
-  };
+    setMd((prev: string) => {
+      const ta = textareaRef.current;
+      if (!ta) return prev + '\n' + text;
+      const start = ta.selectionStart, end = ta.selectionEnd;
+      const before = prev.slice(0, start), after = prev.slice(end);
+      const newText = before + (before && !before.endsWith('\n') ? '\n' : '') + text + '\n' + after;
+      setTimeout(() => { ta.focus(); ta.setSelectionRange(start + text.length + 1, start + text.length + 1); }, 0);
+      return newText;
+    });
+  }, []);
 
-  /* 粘贴事件 */
-  const handlePaste = async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) await processImageFile(file);
+  // ── 提取内联 base64 图片为引用式链接（净化编辑器视图）──
+  const extractInlineBase64Images = useCallback((markdown: string): string => {
+    // 匹配 ![alt](data:image/xxx;base64,...) 内联图片
+    const inlineBase64Regex = /!\[([^\]]*)\]\((data:image\/[a-zA-Z0-9.+]+;base64,[A-Za-z0-9+/=]+)\)/g;
+    const refs: string[] = [];
+    let counter = 0;
+    let cleaned = markdown;
+
+    cleaned = cleaned.replace(inlineBase64Regex, (_match, alt: string, dataUri: string) => {
+      counter++;
+      const refId = `img-${Date.now()}-${counter}`;
+      refs.push(`[${refId}]: ${dataUri}`);
+      return `![${alt || '图片'}][${refId}]`;
+    });
+
+    if (refs.length > 0) {
+      // 确保文末有空行再追加引用定义
+      cleaned = cleaned.trimEnd() + '\n\n' + refs.join('\n') + '\n';
+    }
+
+    return cleaned;
+  }, []);
+
+  // ── MD 文件导入 ──
+  const handleMdImport = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let content = reader.result as string;
+      // 自动将内联 base64 图片提取为引用式链接，避免污染编辑器正文
+      content = extractInlineBase64Images(content);
+      setMd(content);
+      setImportedFileName(file.name);
+    };
+    reader.readAsText(file, 'UTF-8');
+  }, [extractInlineBase64Images]);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleMdImport(file);
+  }, [handleMdImport]);
+
+  // ── 图片压缩 ──
+  const compressImage = useCallback((file: File, maxKB: number = 500, maxWidth: number = 1920): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width > maxWidth) { height = Math.round(height * maxWidth / width); width = maxWidth; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+        const tryCompress = (quality: number) => {
+          canvas.toBlob((blob) => {
+            if (!blob) { reject(new Error('压缩失败')); return; }
+            if (blob.size / 1024 <= maxKB || quality <= 0.3) resolve(blob);
+            else tryCompress(quality - 0.1);
+          }, 'image/jpeg', quality);
+        };
+        tryCompress(0.85);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
+      img.src = url;
+    });
+  }, []);
+
+  // ── 图片上传 ──
+  const uploadImage = useCallback(async (file: File) => {
+    const MAX_BASE64_KB = 400;
+    let blob: Blob = file;
+    if (file.size > MAX_BASE64_KB * 1024) {
+      try { blob = await compressImage(file, MAX_BASE64_KB, 1920); } catch {}
+    }
+    if (imageMode === 'base64') {
+      const reader = new FileReader();
+      reader.onload = () => {
+        appendMd(`![${file.name}](${reader.result as string})`, true);
+      };
+      reader.readAsDataURL(blob);
+    } else {
+      if (!githubConfig.token) { setShowGithubConfig(true); return; }
+      try {
+        const { token, repo, branch } = githubConfig;
+        const path = `images/${Date.now()}-${file.name.replace(/\.[^.]+$/, '.jpg')}`;
+        const base64Reader = new FileReader();
+        base64Reader.onload = async () => {
+          const base64Content = (base64Reader.result as string).split(',')[1];
+          const res = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+            method: 'PUT', headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: `Upload ${file.name}`, content: base64Content, branch }),
+          });
+          if (res.ok) appendMd(`![${file.name}](${GITHUB_CDN_BASE}${file.name.replace(/\.[^.]+$/, '.jpg')})`);
+          else { const err = await res.json(); alert(`GitHub 上传失败: ${err.message}`); }
+        };
+        base64Reader.readAsDataURL(blob);
+      } catch (err: any) { alert(`上传失败: ${err.message}`); }
+    }
+  }, [imageMode, githubConfig, compressImage, appendMd]);
+
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        e.preventDefault(); const file = items[i].getAsFile();
+        if (file) await uploadImage(file);
         return;
       }
     }
-  };
+  }, [uploadImage]);
 
-  /* 拖拽事件 */
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault(); setDragOver(false);
+    const files = e.dataTransfer?.files;
+    if (!files) return;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      if (f.type.startsWith('image/')) await uploadImage(f);
+      else if (f.name.match(/\.(md|markdown)$/i) || f.type === 'text/markdown') handleMdImport(f);
+    }
+  }, [uploadImage, handleMdImport]);
+
+  // ── 分屏拖拽 ──
+  const handleSplitMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    setDragOver(false);
-    const files = e.dataTransfer.files;
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
-        await processImageFile(file);
-      }
-    }
-  };
-
-  /* 导入 Markdown */
-  const handleImportClick = () => fileInputRef.current?.click();
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      setMd(content);
-      showToast(`已导入文件: ${file.name}`);
+    const startX = e.clientX;
+    const startPct = splitPct;
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - startX;
+      const containerW = splitRef.current?.parentElement?.clientWidth || window.innerWidth;
+      const newPct = Math.min(80, Math.max(20, startPct + (dx / containerW) * 100));
+      setSplitPct(newPct);
     };
-    reader.readAsText(file);
-    e.target.value = '';
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem(SPLIT_KEY, String(Math.round(splitPct))); } catch {}
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [splitPct]);
+
+  // 保存分屏比例
+  useEffect(() => {
+    try { localStorage.setItem(SPLIT_KEY, String(Math.round(splitPct))); } catch {}
+  }, [splitPct]);
+
+  const saveGithubConfig = () => {
+    localStorage.setItem('md2wx_github', JSON.stringify(githubConfig));
+    setShowGithubConfig(false);
   };
 
-  /* ============================================================
-   复制到剪贴板（支持 text/html MIME 类型）
-   ============================================================ */
-  async function copyToClipboard(html: string, plainFallback: string) {
-    // 优先尝试写入 text/html（微信编辑器需要此格式才能识别富文本）
-    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
-      try {
-        const htmlBlob = new Blob([html], { type: 'text/html' });
-        const textBlob = new Blob([plainFallback], { type: 'text/plain' });
-        const item = new ClipboardItem({
-          'text/html': htmlBlob,
-          'text/plain': textBlob,
-        });
-        await navigator.clipboard.write([item]);
-        return true;
-      } catch {
-        // 降级到 writeText
-      }
-    }
-    // 降级：仅写入纯文本
-    try {
-      await navigator.clipboard.writeText(html);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /* 检测 Base64 图片总大小并给出提示 */
-  function checkBase64Images(markdown: string): { hasBase64: boolean; totalKb: number; count: number } {
-    const base64Regex = /!\[.*?\]\((data:image\/[^;]+;base64,[^)]+)\)/g;
-    let match;
-    let totalKb = 0;
-    let count = 0;
-    while ((match = base64Regex.exec(markdown)) !== null) {
-      const base64 = match[1];
-      // base64 长度 * 0.75 ≈ 字节数
-      const bytes = (base64.length * 3) / 4;
-      totalKb += bytes / 1024;
-      count++;
-    }
-    return { hasBase64: count > 0, totalKb, count };
-  }
-
-  /* 复制 / 下载 */
-  const handleCopy = async () => {
-    const output = generateOutputHtml(md, theme, mode);
-    const ok = await copyToClipboard(output, output);
-    showToast(ok ? '已复制 HTML 到剪贴板！' : '复制失败，请手动复制');
+  const clearDraft = () => {
+    localStorage.removeItem(DRAFT_KEY);
+    setDraftRestored(false);
+    setMd(DEFAULT_MD);
   };
 
-  const handleCopyForWechat = async () => {
-    // 检测 Base64 图片
-    const imgCheck = checkBase64Images(md);
-    if (imgCheck.hasBase64 && imgCheck.totalKb > 500) {
-      const proceed = window.confirm(
-        `检测到 ${imgCheck.count} 张 Base64 内嵌图片，共 ${imgCheck.totalKb.toFixed(0)} KB。\n\n` +
-        `Base64 图片过大会导致粘贴到公众号编辑器失败或卡顿。\n\n` +
-        `建议改用 GitHub 图床（顶部「图床」下拉框切换）。\n\n` +
-        `是否仍要继续复制？`
-      );
-      if (!proceed) return;
+  // ── 图片排版 ──
+  const insertImageLayout = (layout: string) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd) || '图片链接';
+    let mdImg = '';
+    switch (layout) {
+      case 'center': mdImg = `![图片说明](${sel}#center)`; break;
+      case 'right': mdImg = `![图片说明](${sel}#right)`; break;
+      case '300': mdImg = `![图片说明](${sel}#300)`; break;
+      case 'center-300': mdImg = `![图片说明](${sel}#center-300)`; break;
+      case 'caption': mdImg = `![图注文字](${sel})`; break;
+      case 'gallery': mdImg = `[img-gallery]\n![图1](${sel})\n![图2](图片链接2)\n![图3](图片链接3)\n[/img-gallery]`; break;
+      default: mdImg = `![图片说明](${sel})`;
     }
-
-    const output = generateOutputHtml(md, theme, 'wechat');
-    // 为微信生成纯文本降级版本（去掉 style 标签，保留可读性）
-    const plainFallback = md.replace(/!\[([^\]]*)\]\((data:image\/[^)]+)\)/g, '[$1]')
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[$1]');
-
-    const ok = await copyToClipboard(output, plainFallback);
-    if (ok) {
-      if (imgCheck.hasBase64) {
-        showToast('已复制！Base64 图片较大，如粘贴失败请改用 GitHub 图床');
-      } else {
-        showToast('已复制到公众号格式！直接粘贴到公众号编辑器即可');
-      }
-    } else {
-      showToast('复制失败，请使用「下载」按钮保存后手动复制');
-    }
+    appendMd(mdImg);
+    setShowImageToolbar(false);
   };
-  const handleDownload = () => {
-    const output = generateOutputHtml(md, theme, mode);
-    const fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>${output}</body></html>`;
-    const blob = new Blob([fullHtml], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'article.html'; a.click();
-    URL.revokeObjectURL(url);
-    showToast('已下载 article.html');
-  };
+
+  const imgLayouts = [
+    { key: 'default', label: '默认', desc: '常规图片' },
+    { key: 'center', label: '居中', desc: '水平居中' },
+    { key: 'right', label: '右浮', desc: '文字环绕' },
+    { key: '300', label: '300px', desc: '固定宽度' },
+    { key: 'center-300', label: '居中300', desc: '居中+300px' },
+    { key: 'caption', label: '图注', desc: '带说明文字' },
+    { key: 'gallery', label: '画廊', desc: '2-3列网格' },
+  ];
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 bg-gray-800 text-white text-sm rounded-lg shadow-lg">
-          {toast}
-        </div>
-      )}
-
-      {/* 上传中遮罩 */}
-      {uploading && (
-        <div className="fixed inset-0 z-40 bg-black/20 flex items-center justify-center">
-          <div className="bg-white rounded-lg px-6 py-4 shadow-xl flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm text-gray-700">图片上传中...</span>
-          </div>
-        </div>
-      )}
-
-      {/* GitHub 配置弹窗 */}
-      {showGhConfig && (
-        <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center" onClick={() => setShowGhConfig(false)}>
-          <div className="bg-white rounded-lg shadow-xl w-96 p-6" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-gray-800 mb-4">GitHub 图床配置</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">GitHub Token</label>
-                <input
-                  type="password"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  placeholder="ghp_xxxxxxxxxxxx"
-                  value={ghToken}
-                  onChange={e => setGhToken(e.target.value)}
-                />
-                <p className="text-xs text-gray-400 mt-1">需要 repo 权限的 Personal Access Token</p>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">仓库名称</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  placeholder="用户名/仓库名"
-                  value={ghRepo}
-                  onChange={e => setGhRepo(e.target.value)}
-                />
-                <p className="text-xs text-gray-400 mt-1">例如：cscsxx606/images</p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                onClick={() => setShowGhConfig(false)}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
-              >取消</button>
-              <button
-                onClick={() => { setShowGhConfig(false); showToast('GitHub 配置已保存'); }}
-                className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-md"
-              >保存配置</button>
-            </div>
-          </div>
-        </div>
-      )}
-
+    <div className="h-screen flex flex-col bg-white">
       {/* Header */}
-      <header className="h-14 bg-white border-b border-gray-200 flex items-center px-4 justify-between shrink-0">
+      <header className="flex items-center justify-between px-4 py-2 bg-gray-900 text-white border-b border-gray-700 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="text-lg font-bold text-gray-800">MD to WeChat</div>
-          <span className="text-xs text-gray-400">Markdown 公众号排版编辑器</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* 文件导入 */}
-          <input type="file" accept=".md,.markdown,.txt" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-          <button onClick={handleImportClick} className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-gray-700 transition-colors">
-            导入 MD
-          </button>
-
-          {/* 图片上传 */}
-          <input type="file" accept="image/*" ref={imageInputRef} onChange={e => { const f = e.target.files?.[0]; if (f) processImageFile(f); e.target.value = ''; }} className="hidden" />
-          <button
-            onClick={() => imageInputRef.current?.click()}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-gray-700 transition-colors flex items-center gap-1"
-            title="点击上传图片，或粘贴/拖拽"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-            上传图片
-          </button>
-
-          {/* 图床选择 */}
-          <select
-            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-            value={imageMode}
-            onChange={e => {
-              const val = e.target.value as 'base64' | 'github' | 'url';
-              setImageMode(val);
-              if (val === 'github') {
-                if (!ghToken) setShowGhConfig(true);
-              }
-            }}
-            title="选择图片存储方式"
-          >
-            <option value="base64">图床: Base64 内嵌</option>
-            <option value="github">图床: GitHub</option>
-          </select>
-          {imageMode === 'github' && (
-            <button onClick={() => setShowGhConfig(true)} className="text-xs text-amber-600 hover:text-amber-700 underline">
-              配置
-            </button>
+          <h1 className="text-lg font-bold tracking-tight">MD <span className="text-amber-400">→</span> WeChat</h1>
+          <span className="text-xs text-gray-400 hidden sm:inline">v3.2</span>
+          {draftRestored && (
+            <span className="flex items-center gap-1 text-xs">
+              <span className="text-amber-400">📝 草稿已恢复</span>
+              <button onClick={clearDraft} className="text-gray-500 hover:text-gray-300 underline">清除</button>
+            </span>
           )}
+        </div>
 
-          {/* 主题 */}
-          <select
-            className="px-2 py-1.5 text-sm border border-gray-300 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
-            value={theme}
-            onChange={e => setTheme(e.target.value)}
-          >
-            <option value="default">主题: 默认（橙心）</option>
-            <option value="elegant">主题: 优雅极简</option>
-            <option value="tech">主题: 极客科技</option>
-            <option value="poetic">主题: 诗意国风</option>
-            <option value="mint">主题: 薄荷清新</option>
-            <option value="ocean">主题: 深海蓝</option>
-            <option value="sakura">主题: 樱花粉</option>
-            <option value="dark">主题: 暗夜黑</option>
-            <option value="retro">主题: 砖红复古</option>
-            <option value="violet">主题: 紫罗兰</option>
-            <option value="graphite">主题: 石墨灰</option>
-            <option value="sunshine">主题: 阳光金</option>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 段落间距 */}
+          <select className="bg-gray-800 text-white text-xs border border-gray-700 rounded px-1.5 py-1" value={spacing} onChange={e => setSpacing(e.target.value as any)} title="段落间距">
+            <option value="compact">紧凑</option>
+            <option value="normal">标准</option>
+            <option value="loose">宽松</option>
           </select>
 
-          {/* 预览模式 */}
-          <div className="flex bg-gray-100 rounded-md p-0.5">
-            <button className={`px-3 py-1 text-sm rounded ${mode === 'preview' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`} onClick={() => setMode('preview')}>预览模式</button>
-            <button className={`px-3 py-1 text-sm rounded ${mode === 'wechat' ? 'bg-white shadow text-gray-800' : 'text-gray-500'}`} onClick={() => setMode('wechat')}>公众号模式</button>
+          <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
+            <input type="checkbox" checked={autoSpace} onChange={e => setAutoSpace(e.target.checked)} className="w-3 h-3" />间距
+          </label>
+          <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
+            <input type="checkbox" checked={showToc} onChange={e => setShowToc(e.target.checked)} className="w-3 h-3" />TOC
+          </label>
+          <label className="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
+            <input type="checkbox" checked={firstIndent} onChange={e => setFirstIndent(e.target.checked)} className="w-3 h-3" />缩进
+          </label>
+
+          <select className="bg-gray-800 text-white text-xs border border-gray-700 rounded px-2 py-1" value={theme} onChange={e => setTheme(e.target.value as ThemeId)}>
+            {(Object.keys(THEME_META) as ThemeId[]).map(id => <option key={id} value={id}>{THEME_META[id].name}</option>)}
+          </select>
+
+          <div className="flex bg-gray-800 rounded-md p-0.5">
+            <button className={`px-2 py-0.5 text-xs rounded ${mode === 'preview' ? 'bg-gray-600 text-white' : 'text-gray-400'}`} onClick={() => setMode('preview')}>预览</button>
+            <button className={`px-2 py-0.5 text-xs rounded ${mode === 'wechat' ? 'bg-gray-600 text-white' : 'text-gray-400'}`} onClick={() => setMode('wechat')}>公众号</button>
           </div>
 
-          <button onClick={handleCopy} className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-md transition-colors">复制 HTML</button>
-          <button onClick={handleDownload} className="px-4 py-1.5 bg-gray-800 hover:bg-gray-900 text-white text-sm font-medium rounded-md transition-colors">下载</button>
+          <button onClick={() => setFullscreen(!fullscreen)} className={`px-2 py-0.5 text-xs rounded ${fullscreen ? 'bg-amber-500 text-white' : 'text-gray-400 hover:text-white'}`} title="全屏编辑">
+            {fullscreen ? '⊠' : '⛶'}
+          </button>
+
+          <button onClick={handleCopy} className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded transition-colors">复制HTML</button>
+          <button onClick={handleCopyForWechat} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors">
+            {copySuccess ? '✅ 已复制' : '复制到公众号'}
+          </button>
+          <button onClick={handleDownload} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded transition-colors">下载</button>
         </div>
       </header>
 
       {/* Main */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* 编辑器 */}
-        <div className={`w-1/2 flex flex-col border-r border-gray-200 bg-white ${dragOver ? 'ring-2 ring-amber-400 ring-inset' : ''}`}
+      <div className="flex flex-1 overflow-hidden" ref={splitRef}>
+        {/* Editor */}
+        <div
+          className={`flex flex-col border-r border-gray-200 bg-white relative ${fullscreen ? '' : ''} ${dragOver ? 'ring-2 ring-amber-400 ring-inset' : ''}`}
+          style={{ width: fullscreen ? '100%' : `${splitPct}%` }}
           onDragOver={e => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
         >
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between">
-            <span>Markdown 编辑</span>
-            <span>{md.length} 字符 {imageMode === 'base64' ? '| 图床: Base64' : imageMode === 'github' ? '| 图床: GitHub' : ''}</span>
+          {/* 编辑区顶栏 */}
+          <div className="px-3 py-1 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between items-center shrink-0">
+            <span className="flex items-center gap-2">
+              <span>Markdown</span>
+              {importedFileName && <span className="text-amber-600 font-medium">📄 {importedFileName}</span>}
+            </span>
+            <span className="flex gap-2 items-center">
+              <span>字:{wordCount.total} | ~{readingTime}min | H:{tocItems.length}</span>
+              <button onClick={() => setShowImageToolbar(!showImageToolbar)} className="px-1.5 py-0.5 text-xs bg-gray-200 hover:bg-gray-300 rounded transition-colors" title="图片排版">🖼️</button>
+              <button onClick={() => fileInputRef.current?.click()} className="px-1.5 py-0.5 text-xs bg-gray-200 hover:bg-gray-300 rounded transition-colors" title="导入MD">📥</button>
+            </span>
           </div>
-          {dragOver && (
-            <div className="absolute inset-0 bg-amber-50/80 flex items-center justify-center z-10 pointer-events-none">
-              <div className="text-amber-600 font-medium text-lg">松开即可上传图片</div>
+
+          {/* Markdown 工具栏 */}
+          <div className="px-2 py-1 bg-gray-100 border-b border-gray-200 flex gap-0.5 flex-wrap shrink-0">
+            {TOOLBAR_ITEMS.map(item => item.key.startsWith('divider')
+              ? <span key={item.key} className="w-px bg-gray-300 mx-1" />
+              : <button key={item.key} onClick={() => handleToolbar(item)}
+                  className="px-1.5 py-0.5 text-xs hover:bg-gray-200 rounded transition-colors text-gray-600"
+                  title={item.title}>{item.label}</button>
+            )}
+          </div>
+
+          {/* 图片排版工具栏 */}
+          {showImageToolbar && (
+            <div className="px-3 py-1.5 bg-gray-100 border-b border-gray-200 flex gap-1.5 flex-wrap shrink-0">
+              {imgLayouts.map(l => (
+                <button key={l.key} onClick={() => insertImageLayout(l.key)}
+                  className="px-2 py-0.5 text-xs bg-white border border-gray-300 hover:bg-amber-50 hover:border-amber-400 rounded transition-colors"
+                  title={l.desc}>{l.label}</button>
+              ))}
+              <button onClick={() => setShowImageToolbar(false)} className="px-1.5 py-0.5 text-xs text-gray-400 hover:text-gray-600 ml-auto">✕</button>
             </div>
           )}
-          <textarea
-            ref={textareaRef}
+
+          {dragOver && (
+            <div className="absolute inset-0 bg-amber-50/80 flex items-center justify-center z-10 pointer-events-none">
+              <div className="text-amber-600 font-medium text-lg">松开上传图片 / 导入 MD</div>
+            </div>
+          )}
+
+          {/* 图床模式 */}
+          <div className="px-3 py-1 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex items-center gap-2 shrink-0">
+            <span>图床:</span>
+            <button onClick={() => setImageMode('base64')} className={`px-1.5 py-0.5 rounded transition-colors ${imageMode === 'base64' ? 'bg-amber-100 text-amber-700 font-medium' : 'hover:bg-gray-200 text-gray-400'}`}>Base64</button>
+            <button onClick={() => setImageMode('github')} className={`px-1.5 py-0.5 rounded transition-colors ${imageMode === 'github' ? 'bg-amber-100 text-amber-700 font-medium' : 'hover:bg-gray-200 text-gray-400'}`}>GitHub</button>
+            {imageMode === 'github' && !githubConfig.token && (
+              <button onClick={() => setShowGithubConfig(true)} className="text-amber-600 hover:underline">⚙️ Token</button>
+            )}
+            {imageMode === 'github' && githubConfig.token && <span className="text-green-600 text-xs">✅</span>}
+          </div>
+
+          <input ref={fileInputRef} type="file" accept=".md,.markdown,.txt" onChange={handleFileInputChange} className="hidden" />
+          <textarea ref={textareaRef}
             className="flex-1 w-full p-4 resize-none focus:outline-none font-mono text-sm leading-relaxed text-gray-700"
-            value={md}
-            onChange={e => setMd(e.target.value)}
-            onPaste={handlePaste}
-            spellCheck={false}
-            placeholder="在此输入 Markdown 内容...&#10;支持粘贴截图（Ctrl+V）和拖拽图片上传"
+            value={md} onChange={e => setMd(e.target.value)} onPaste={handlePaste} spellCheck={false}
+            placeholder="在此输入 Markdown...&#10;Ctrl+V 粘贴截图 | 拖拽上传/导入MD | Ctrl+S 下载"
           />
+
+          {/* 内嵌图片折叠面板 */}
+          {imageRefs.length > 0 && (
+            <div className="shrink-0 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => setShowImagePanel(p => !p)}
+                className="w-full px-3 py-1.5 text-xs text-gray-600 flex items-center justify-between hover:bg-gray-100 transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  📎 内嵌图片 ({imageRefs.length})
+                </span>
+                <span>{showImagePanel ? '▲' : '▼'}</span>
+              </button>
+              {showImagePanel && (
+                <div className="max-h-48 overflow-y-auto px-3 py-2 space-y-2">
+                  {imageRefs.map(ref => (
+                    <div key={ref.id} className="flex items-center gap-2 text-xs">
+                      <img src={ref.url} alt={ref.alt} className="w-10 h-10 object-cover rounded border border-gray-200 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-700 truncate">[{ref.id}] {ref.alt}</div>
+                        <div className="text-gray-400">{ref.sizeKB} KB · Base64</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setMd((prev: string) => {
+                            // 删除引用标记和引用定义
+                            let cleaned = prev
+                              .replace(new RegExp(`!\\[([^\\]]*)\\]\\[${ref.id}\\]\\n?`, 'g'), '')
+                              .replace(new RegExp(`\\n?\\[${ref.id}\\]:\\s+[^\\n]+\\n?`, 'g'), '');
+                            // 清理多余空行
+                            cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+                            return cleaned;
+                          });
+                        }}
+                        className="text-red-400 hover:text-red-600 px-1 shrink-0"
+                        title="删除"
+                      >🗑</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* 预览 */}
-        <div className="w-1/2 flex flex-col bg-gray-100" id="preview">
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between items-center">
-            <span>{mode === 'preview' ? '实时预览' : '公众号适配预览（外链转脚注、纯黑过滤等）'}</span>
-            <div className="flex items-center gap-2">
-              <span>主题: {theme}</span>
-              <button onClick={handleCopyForWechat} className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors" title="自动转换为公众号格式并复制">
-                复制到公众号
-              </button>
+        {/* 分屏拖拽手柄 */}
+        {!fullscreen && (
+          <div
+            onMouseDown={handleSplitMouseDown}
+            className="w-2 bg-gray-200 hover:bg-amber-400 cursor-col-resize shrink-0 transition-colors flex items-center justify-center"
+            title="拖拽调整分屏"
+          >
+            <div className="w-0.5 h-8 bg-gray-400 rounded" />
+          </div>
+        )}
+
+        {/* Preview */}
+        {!fullscreen && (
+          <div className="flex flex-col bg-gray-100" style={{ width: `${100 - splitPct}%` }}>
+            <div className="px-3 py-1 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between items-center shrink-0">
+              <span>{mode === 'preview' ? '实时预览' : '公众号适配（外链转脚注/字号统一）'}</span>
+              <span className="text-gray-400">{THEME_META[theme]?.name}</span>
+            </div>
+            <div className="flex-1 overflow-hidden bg-white">
+              <iframe ref={previewRef} className="w-full h-full border-0" title="preview" />
             </div>
           </div>
-          <div className="flex-1 overflow-auto p-4">
-            <div id="preview-content" className="rounded-lg">
-              <iframe ref={previewRef} className="w-full h-full border-0" style={{ minHeight: '600px' }} title="preview" />
+        )}
+      </div>
+
+      {/* GitHub Config Modal */}
+      {showGithubConfig && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 shadow-xl">
+            <h3 className="text-lg font-bold mb-4">GitHub 图床配置</h3>
+            <input className="w-full border border-gray-300 rounded px-3 py-2 mb-3 text-sm" placeholder="Personal Access Token" type="password"
+              value={githubConfig.token} onChange={e => setGitHubConfig(prev => ({ ...prev, token: e.target.value }))} />
+            <input className="w-full border border-gray-300 rounded px-3 py-2 mb-3 text-sm" placeholder="仓库 (user/repo)"
+              value={githubConfig.repo} onChange={e => setGitHubConfig(prev => ({ ...prev, repo: e.target.value }))} />
+            <input className="w-full border border-gray-300 rounded px-3 py-2 mb-4 text-sm" placeholder="分支 (main)"
+              value={githubConfig.branch} onChange={e => setGitHubConfig(prev => ({ ...prev, branch: e.target.value }))} />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowGithubConfig(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">取消</button>
+              <button onClick={saveGithubConfig} className="px-4 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded">保存</button>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
