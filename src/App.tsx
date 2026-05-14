@@ -12,6 +12,32 @@ const GITHUB_CDN_BASE = 'https://raw.githubusercontent.com/cscsxx606/md-to-wecha
 const DRAFT_KEY = 'md2wx_draft';
 const SPLIT_KEY = 'md2wx_split';
 
+// ─── Prism.js 代码高亮 CSS（提取为常量，避免每次 render 重建）──
+const PRISM_CSS = (isDark: boolean) => `<style>
+  code[class*="language-"], pre[class*="language-"] { color:#333; background:0 0; font-family:"SFMono-Regular",Consolas,Monaco,monospace; font-size:13px; text-align:left; white-space:pre; word-spacing:normal; word-break:normal; word-wrap:normal; line-height:1.6; tab-size:4; hyphens:none; }
+  pre[class*="language-"] { padding:1em; margin:.5em 0; overflow:auto; border-radius:4px; }
+  :not(pre)>code[class*="language-"] { padding:.1em; border-radius:.3em; }
+  .token.comment,.token.block-comment,.token.prolog,.token.doctype,.token.cdata { color:#7d8b99; }
+  .token.punctuation { color:#5f6364; }
+  .token.property,.token.tag,.token.boolean,.token.number,.token.function-name,.token.constant,.token.symbol,.token.deleted { color:#c92c2c; }
+  .token.selector,.token.attr-name,.token.string,.token.char,.token.function,.token.builtin,.token.inserted { color:#2f9c0a; }
+  .token.operator,.token.entity,.token.url,.token.variable { color:#a67f59; }
+  .token.atrule,.token.attr-value,.token.keyword,.token.class-name { color:#1990b8; }
+  .token.regex,.token.important { color:#e90; } .token.important,.token.bold { font-weight:700; } .token.italic { font-style:italic; } .token.entity { cursor:help; }
+  ${isDark ? `
+  code[class*="language-"], pre[class*="language-"] { color:#e0e0e0; }
+  .token.comment { color:#6a737d; } .token.punctuation { color:#9e9e9e; }
+  .token.property,.token.tag,.token.boolean,.token.number,.token.constant,.token.symbol,.token.deleted { color:#ff8a80; }
+  .token.selector,.token.attr-name,.token.string,.token.char,.token.function,.token.builtin,.token.inserted { color:#69f0ae; }
+  .token.operator,.token.entity,.token.url,.token.variable { color:#ffd54f; }
+  .token.atrule,.token.attr-value,.token.keyword,.token.class-name { color:#82b1ff; }` : ''}
+  .nice-code { background:#f8f9fa; border:1px solid #eaeaea; }
+  .nice-footnotes { padding:12px 16px; background:#fafafa; border-radius:6px; margin-top:20px; }
+  .nice-figure { margin:16px 0; } .nice-figcaption { font-size:13px; color:#888; margin-top:6px; line-height:1.6; }
+  .nice-gallery { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; } .nice-gallery img { width:100%; height:auto; object-fit:cover; border-radius:4px; }
+  .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+</style>`;
+
 const DEFAULT_MD = `# 欢迎使用 MD to WeChat
 
 ## 功能一览
@@ -172,46 +198,38 @@ export default function App() {
 
     const wrapped = `<div id="nice">${bodyHtml}</div>`;
 
-    const prismCSS = `<style>
-      code[class*="language-"], pre[class*="language-"] { color:#333; background:0 0; font-family:"SFMono-Regular",Consolas,Monaco,monospace; font-size:13px; text-align:left; white-space:pre; word-spacing:normal; word-break:normal; word-wrap:normal; line-height:1.6; tab-size:4; hyphens:none; }
-      pre[class*="language-"] { padding:1em; margin:.5em 0; overflow:auto; border-radius:4px; }
-      :not(pre)>code[class*="language-"] { padding:.1em; border-radius:.3em; }
-      .token.comment,.token.block-comment,.token.prolog,.token.doctype,.token.cdata { color:#7d8b99; }
-      .token.punctuation { color:#5f6364; }
-      .token.property,.token.tag,.token.boolean,.token.number,.token.function-name,.token.constant,.token.symbol,.token.deleted { color:#c92c2c; }
-      .token.selector,.token.attr-name,.token.string,.token.char,.token.function,.token.builtin,.token.inserted { color:#2f9c0a; }
-      .token.operator,.token.entity,.token.url,.token.variable { color:#a67f59; }
-      .token.atrule,.token.attr-value,.token.keyword,.token.class-name { color:#1990b8; }
-      .token.regex,.token.important { color:#e90; } .token.important,.token.bold { font-weight:700; } .token.italic { font-style:italic; } .token.entity { cursor:help; }
-      ${inputTheme === 'dark' ? `
-      code[class*="language-"], pre[class*="language-"] { color:#e0e0e0; }
-      .token.comment { color:#6a737d; } .token.punctuation { color:#9e9e9e; }
-      .token.property,.token.tag,.token.boolean,.token.number,.token.constant,.token.symbol,.token.deleted { color:#ff8a80; }
-      .token.selector,.token.attr-name,.token.string,.token.char,.token.function,.token.builtin,.token.inserted { color:#69f0ae; }
-      .token.operator,.token.entity,.token.url,.token.variable { color:#ffd54f; }
-      .token.atrule,.token.attr-value,.token.keyword,.token.class-name { color:#82b1ff; }` : ''}
-      .nice-code { background:#f8f9fa; border:1px solid #eaeaea; }
-      .nice-footnotes { padding:12px 16px; background:#fafafa; border-radius:6px; margin-top:20px; }
-      .nice-figure { margin:16px 0; } .nice-figcaption { font-size:13px; color:#888; margin-top:6px; line-height:1.6; }
-      .nice-gallery { display:flex; flex-wrap:wrap; gap:8px; margin:16px 0; } .nice-gallery img { width:100%; height:auto; object-fit:cover; border-radius:4px; }
-      .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-    </style>`;
+    const prismCSS = PRISM_CSS(inputTheme === 'dark');
 
     return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;">${wrapped}</body></html>`;
   }, [autoSpace, showToc, firstIndent, spacing]);
 
-  // ── 更新预览 ──
-  const updatePreview = useCallback(() => {
-    if (!previewRef.current) return;
-    const doc = previewRef.current.contentDocument;
+  // ── iframe 预览优化：分离样式初始化和内容更新 ──
+  // 初始化 iframe 样式（theme 变化时重建）
+  useEffect(() => {
+    const iframe = previewRef.current;
+    if (!iframe) return;
+    const doc = iframe.contentDocument;
     if (!doc) return;
-    doc.open();
-    doc.write(renderHtml(md, theme, mode));
+    const css = THEME_CSS[theme] || THEME_CSS.default;
+    const prismCSS = PRISM_CSS(theme === 'dark');
+    // 额外 CSS：段落间距、缩进等
+    let extraCss = '';
+    if (firstIndent) extraCss += `#nice p.nice-indent, #nice p { text-indent:2em; }`;    const spacingMap = { compact: '6px', normal: '12px', loose: '20px' };
+    extraCss += `#nice p { margin-top:${spacingMap[spacing]} !important; margin-bottom:${spacingMap[spacing]} !important; }`;
+    if (mode === 'wechat') extraCss += `#nice, #nice p, #nice li, #nice td, #nice th { font-size:15px !important; }`;    doc.open();
+    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><style>${css}${extraCss}${prismCSS}</style></head><body style="margin:0;padding:0;"></body></html>`);
     doc.close();
-  }, [md, theme, mode, renderHtml]);
+  }, [theme, spacing, firstIndent, mode]);
 
-  useEffect(() => { updatePreview(); }, [updatePreview]);
+  // 内容变化时只更新 body（避免重建 iframe，优化性能）
+  useEffect(() => {
+    const doc = previewRef.current?.contentDocument;
+    if (!doc || !doc.body) return;
+    const bodyHtml = parseMarkdown(md, { autoSpace, showToc, firstIndent });
+    const adapted = mode === 'wechat' ? adaptForWechat(bodyHtml) : bodyHtml;
+    doc.body.innerHTML = `<div id="nice">${adapted}</div>`;
+  }, [md, autoSpace, showToc, firstIndent, mode]);
 
   // ── 复制 ──
   const handleCopyForWechat = useCallback(async () => {
@@ -372,8 +390,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (file) handleMdImport(file);
   }, [handleMdImport]);
-
-  // ── 图片压缩 ──
+  // ── 图片压缩（优化：保留 PNG 透明度）──
   const compressImage = useCallback((file: File, maxKB: number = 500, maxWidth: number = 1920): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -385,20 +402,37 @@ export default function App() {
         const canvas = document.createElement('canvas');
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d')!;
-        // PNG 透明背景填充白色，防止转 JPEG 后变黑
-        if (file.type === 'image/png') {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, width, height);
-        }
         ctx.drawImage(img, 0, 0, width, height);
-        const tryCompress = (quality: number) => {
-          canvas.toBlob((blob) => {
-            if (!blob) { reject(new Error('压缩失败')); return; }
-            if (blob.size / 1024 <= maxKB || quality <= 0.3) resolve(blob);
-            else tryCompress(quality - 0.1);
-          }, 'image/jpeg', quality);
+        
+        // 检测是否有透明像素
+        const hasTransparency = (): boolean => {
+          if (file.type !== 'image/png') return false;
+          const imageData = ctx.getImageData(0, 0, width, height);
+          const data = imageData.data;
+          for (let i = 3; i < data.length; i += 4) {
+            if (data[i] < 255) return true;
+          }
+          return false;
         };
-        tryCompress(0.85);
+        
+        const preservePNG = hasTransparency();
+        if (preservePNG) {
+          // PNG 有透明像素 → 使用 PNG 格式保留透明度
+          canvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error('PNG 压缩失败'));
+          }, 'image/png', 0.9);
+        } else {
+          // 无透明像素 → JPEG 压缩（更高效）
+          const tryCompress = (quality: number) => {
+            canvas.toBlob((blob) => {
+              if (!blob) { reject(new Error('压缩失败')); return; }
+              if (blob.size / 1024 <= maxKB || quality <= 0.3) resolve(blob);
+              else tryCompress(quality - 0.1);
+            }, 'image/jpeg', quality);
+          };
+          tryCompress(0.85);
+        }
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片加载失败')); };
       img.src = url;
@@ -418,8 +452,6 @@ export default function App() {
         appendMd(`![${file.name}](${reader.result as string})`, true);
       };
       reader.readAsDataURL(blob);
-    } else {
-      if (!githubConfig.token) { setShowGithubConfig(true); return; }
       try {
         const { token, repo, branch } = githubConfig;
         const fileName = `${Date.now()}-${file.name.replace(/\.[^.]+$/, '.jpg')}`;
