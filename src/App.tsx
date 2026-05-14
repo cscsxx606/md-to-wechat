@@ -89,7 +89,8 @@ export default function App() {
   const [firstIndent, setFirstIndent] = useState(false);
   const [imageMode, setImageMode] = useState<ImageMode>('base64');
   const [dragOver, setDragOver] = useState(false);
-  const [copySuccess, setCopySuccess] = useState(false);
+  const [copySuccessWechat, setCopySuccessWechat] = useState(false);
+  const [copySuccessHtml, setCopySuccessHtml] = useState(false);
   const [importedFileName, setImportedFileName] = useState('');
   const [showImageToolbar, setShowImageToolbar] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -102,7 +103,7 @@ export default function App() {
   });
   const [githubConfig, setGitHubConfig] = useState<GitHubConfig>(() => {
     try {
-      const saved = localStorage.getItem('md2wx_github');
+      const saved = sessionStorage.getItem('md2wx_github');
       return saved ? JSON.parse(saved) : { token: '', repo: '', branch: 'main' };
     } catch { return { token: '', repo: '', branch: 'main' }; }
   });
@@ -218,14 +219,14 @@ export default function App() {
     const match = html.match(/<div id="nice">([\s\S]*)<\/div>/);
     const content = match ? match[1] : html;
     const success = await copyToClipboard(content);
-    if (success) { setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }
+    if (success) { setCopySuccessWechat(true); setTimeout(() => setCopySuccessWechat(false), 2000); }
     else alert('复制失败，请手动复制。');
   }, [md, theme, renderHtml]);
 
   const handleCopy = useCallback(async () => {
     const html = renderHtml(md, theme, 'wechat');
     const success = await copyToClipboard(html);
-    if (success) { setCopySuccess(true); setTimeout(() => setCopySuccess(false), 2000); }
+    if (success) { setCopySuccessHtml(true); setTimeout(() => setCopySuccessHtml(false), 2000); }
   }, [md, theme, renderHtml]);
 
   const handleDownload = useCallback(() => {
@@ -309,15 +310,13 @@ export default function App() {
       const refId = `img-${imgRefCounter.current}`;
       const inlineImg = `![${alt || '图片'}][${refId}]`;
       const refDef = `\n[${refId}]: ${base64Src}`;
-      // 保留图片前面的前缀文本（如压缩提示）
-      const prefixText = text.slice(0, imgMatch.index);
       setMd((prev: string) => {
         const ta = textareaRef.current;
-        if (!ta) return prev + '\n' + prefixText + inlineImg + refDef;
+        if (!ta) return prev + '\n' + inlineImg + refDef;
         const start = ta.selectionStart, end = ta.selectionEnd;
         const before = prev.slice(0, start), after = prev.slice(end);
-        const newText = before + (before && !before.endsWith('\n') ? '\n' : '') + prefixText + inlineImg + refDef + '\n' + after;
-        setTimeout(() => { ta.focus(); ta.setSelectionRange(start + prefixText.length + inlineImg.length + 1, start + prefixText.length + inlineImg.length + 1); }, 0);
+        const newText = before + (before && !before.endsWith('\n') ? '\n' : '') + inlineImg + refDef + '\n' + after;
+        setTimeout(() => { ta.focus(); ta.setSelectionRange(start + inlineImg.length + 1, start + inlineImg.length + 1); }, 0);
         return newText;
       });
       return;
@@ -386,6 +385,11 @@ export default function App() {
         const canvas = document.createElement('canvas');
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d')!;
+        // PNG 透明背景填充白色，防止转 JPEG 后变黑
+        if (file.type === 'image/png') {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+        }
         ctx.drawImage(img, 0, 0, width, height);
         const tryCompress = (quality: number) => {
           canvas.toBlob((blob) => {
@@ -418,7 +422,8 @@ export default function App() {
       if (!githubConfig.token) { setShowGithubConfig(true); return; }
       try {
         const { token, repo, branch } = githubConfig;
-        const path = `images/${Date.now()}-${file.name.replace(/\.[^.]+$/, '.jpg')}`;
+        const fileName = `${Date.now()}-${file.name.replace(/\.[^.]+$/, '.jpg')}`;
+        const path = `images/${fileName}`;
         const base64Reader = new FileReader();
         base64Reader.onload = async () => {
           const base64Content = (base64Reader.result as string).split(',')[1];
@@ -426,7 +431,7 @@ export default function App() {
             method: 'PUT', headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: `Upload ${file.name}`, content: base64Content, branch }),
           });
-          if (res.ok) appendMd(`![${file.name}](${GITHUB_CDN_BASE}${file.name.replace(/\.[^.]+$/, '.jpg')})`);
+          if (res.ok) appendMd(`![${file.name}](${GITHUB_CDN_BASE}${fileName})`);
           else { const err = await res.json(); alert(`GitHub 上传失败: ${err.message}`); }
         };
         base64Reader.readAsDataURL(blob);
@@ -437,11 +442,12 @@ export default function App() {
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
+    let hasImage = false;
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.startsWith('image/')) {
-        e.preventDefault(); const file = items[i].getAsFile();
+        if (!hasImage) { e.preventDefault(); hasImage = true; }
+        const file = items[i].getAsFile();
         if (file) await uploadImage(file);
-        return;
       }
     }
   }, [uploadImage]);
@@ -473,7 +479,6 @@ export default function App() {
       document.removeEventListener('mouseup', onUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      try { localStorage.setItem(SPLIT_KEY, String(Math.round(splitPct))); } catch {}
     };
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
@@ -487,7 +492,7 @@ export default function App() {
   }, [splitPct]);
 
   const saveGithubConfig = () => {
-    localStorage.setItem('md2wx_github', JSON.stringify(githubConfig));
+    sessionStorage.setItem('md2wx_github', JSON.stringify(githubConfig));
     setShowGithubConfig(false);
   };
 
@@ -574,7 +579,7 @@ export default function App() {
 
           <button onClick={handleCopy} className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded transition-colors">复制HTML</button>
           <button onClick={handleCopyForWechat} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors">
-            {copySuccess ? '✅ 已复制' : '复制到公众号'}
+            {copySuccessWechat ? '✅ 已复制' : '复制到公众号'}
           </button>
           <button onClick={handleDownload} className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded transition-colors">下载</button>
         </div>
