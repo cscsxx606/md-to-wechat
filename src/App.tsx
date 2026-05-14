@@ -577,7 +577,7 @@ export default function App() {
             {fullscreen ? '⊠' : '⛶'}
           </button>
 
-          <button onClick={handleCopy} className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded transition-colors">复制HTML</button>
+          <button onClick={handleCopy} className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded transition-colors">{copySuccessHtml ? '✅ 已复制' : '复制HTML'}</button>
           <button onClick={handleCopyForWechat} className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded transition-colors">
             {copySuccessWechat ? '✅ 已复制' : '复制到公众号'}
           </button>
