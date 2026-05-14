@@ -603,8 +603,11 @@ export default function App() {
             </span>
             <span className="flex gap-2 items-center">
               <span>字:{wordCount.total} | ~{readingTime}min | H:{tocItems.length}</span>
-              <button onClick={() => setShowImageToolbar(!showImageToolbar)} className="px-1.5 py-0.5 text-xs bg-gray-200 hover:bg-gray-300 rounded transition-colors" title="图片排版">🖼️</button>
-              <button onClick={() => fileInputRef.current?.click()} className="px-1.5 py-0.5 text-xs bg-gray-200 hover:bg-gray-300 rounded transition-colors" title="导入MD">📥</button>
+              <button onClick={() => setShowImageToolbar(!showImageToolbar)} className="px-2 py-1 text-xs bg-gray-200 hover:bg-gray-300 rounded-md transition-colors" title="图片排版">🖼️</button>
+              <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 active:bg-amber-700 rounded-md shadow-sm hover:shadow transition-all" title="导入 Markdown 文件">
+                <span>📄</span>
+                <span>导入 MD</span>
+              </button>
             </span>
           </div>
 
